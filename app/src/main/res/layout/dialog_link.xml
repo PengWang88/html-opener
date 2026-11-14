@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingLeft="24dp"
+    android:paddingTop="8dp"
+    android:paddingRight="24dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:fontFamily="sans-serif-medium"
+        android:letterSpacing="0.12"
+        android:text="@string/link_name_label"
+        android:textColor="@color/muted"
+        android:textSize="10sp" />
+
+    <EditText
+        android:id="@+id/et_link_name"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="@string/link_name_hint"
+        android:inputType="textCapSentences"
+        android:maxLines="1"
+        android:textColor="@color/ink"
+        android:textColorHint="@color/rule"
+        android:textSize="16sp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:fontFamily="sans-serif-medium"
+        android:letterSpacing="0.12"
+        android:text="@string/link_url_label"
+        android:textColor="@color/muted"
+        android:textSize="10sp" />
+
+    <EditText
+        android:id="@+id/et_link_url"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="@string/link_url_hint"
+        android:inputType="textUri"
+        android:maxLines="1"
+        android:textColor="@color/ink"
+        android:textColorHint="@color/rule"
+        android:textSize="16sp" />
+</LinearLayout>

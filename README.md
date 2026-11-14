@@ -2,10 +2,11 @@
 
 仓库：<https://github.com/PengWang88/html-opener>
 
-一个最小化的 Android 应用，只有两个功能：
+一个最小化的 Android 应用，用来打开本地 Web 应用，并提供快捷链接：
 
 1. 点击右上角「导入」，选择一个包含多个 Web 应用子文件夹的目录。应用只记录该目录的访问授权（引用导入），不复制任何文件。
 2. 点击列表中的子文件夹，用手机上的浏览器打开对应的 Web 应用。系统弹窗会提供「仅一次 / 始终」。
+3. 底部切换到「02 链接」，可以添加、编辑、删除常用网址，点击直接用浏览器打开。
 
 ## 安装
 
@@ -14,7 +15,7 @@
 
 发布版使用独立签名，与调试版签名不同：
 
-**从 v1.3 发布版升级**（同一签名，保留已导入目录）：
+**从 v1.3 / v1.4 发布版升级**（同一签名，保留已导入目录和快捷链接）：
 
 ```bash
 adb install -r HTMLOpener-release.apk
@@ -32,14 +33,15 @@ adb install HTMLOpener-release.apk
 - 包名：`com.example.htmlopener`
 - 最低系统：Android 6.0（API 23）
 - 目标系统：Android 14（API 34）
-- 版本：1.4（versionCode 5）
-- 发布 APK 大小：约 100 KB
-- 发布 APK SHA-256：`7a9734a7c2251e5ba5aa7ca1618a557f0e5981e226cbd489660e684c53d80192`
+- 版本：1.5（versionCode 6）
+- 发布 APK 大小：约 112 KB
+- 发布 APK SHA-256：`54fa84393567a8d1f83cda5b8e91ce560af43130d6858dc2b48771dcbd497115`
 
 ## 界面
 
 - 瑞士国际主义风格：纯白、黑、红三色，大字号标题，编号列表，细线分隔，无圆角卡片。
-- 列表显示序号（01、02…）、应用名和入口文件；空状态使用大号“00”和引导文字。
+- 底部双标签导航：`01 应用` / `02 链接`，红色顶部指示条标识当前页。
+- 应用页显示序号（01、02…）、应用名和入口文件；链接页显示名称和网址；空状态使用大号“00”和引导文字。
 - 应用图标为红底白色 `<>` 标记，包含自适应图标、圆形图标和旧版 PNG。
 
 ![应用图标](app/src/main/res/mipmap-xxxhdpi/ic_launcher.png)
@@ -67,6 +69,14 @@ adb install HTMLOpener-release.apk
 - 只扫描一级子文件夹；子文件夹内部的 JS/CSS/图片等资源不受目录层级限制，均可加载。
 - 如果所选父目录自身包含 `index.html`，父目录也会显示为一个应用。
 - 如果某个子文件夹内没有 HTML，则不会出现在列表中。
+
+## 快捷链接
+
+- 底部导航切到「02 链接」。
+- 点右上角「添加 +」，输入名称和网址；网址不写 `https://` 也可以，会自动补全。
+- 点击条目直接用浏览器打开。
+- 点条目右侧「编辑」可以修改名称/网址，也可以删除。
+- 链接保存在应用本地 `SharedPreferences` 中，不会上传到网络。
 
 ## 为什么用本地 HTTP 服务
 
@@ -114,9 +124,10 @@ export ANDROID_HOME=/path/to/android-sdk
 
 ## 主要文件
 
-- `app/src/main/java/com/example/htmlopener/MainActivity.java`：目录导入、Web 应用列表、调用浏览器
+- `app/src/main/java/com/example/htmlopener/MainActivity.java`：目录导入、Web 应用列表、快捷链接、底部导航
 - `app/src/main/java/com/example/htmlopener/HtmlServer.java`：仅监听 `127.0.0.1` 的静态文件服务
 - `app/src/main/java/com/example/htmlopener/ServerService.java`：保持服务进程存活的前台服务
-- `app/src/main/res/layout/activity_main.xml`：瑞士风格头部和列表
-- `app/src/main/res/layout/item_app.xml`：编号列表行
+- `app/src/main/res/layout/activity_main.xml`：页面容器和底部导航
+- `app/src/main/res/layout/page_apps.xml`、`page_links.xml`：应用页、链接页
+- `app/src/main/res/layout/item_app.xml`、`item_link.xml`、`dialog_link.xml`：列表行和链接对话框
 - `app/src/main/res/values/colors.xml`、`styles.xml`：红黑白配色与主题

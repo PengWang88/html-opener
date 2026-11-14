@@ -1,6 +1,7 @@
 package com.example.htmlopener;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -13,12 +14,18 @@ import android.text.style.ForegroundColorSpan;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowManager;
 import android.widget.BaseAdapter;
+import android.widget.EditText;
 import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.documentfile.provider.DocumentFile;
+
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -30,17 +37,31 @@ public class MainActivity extends Activity {
     private static final int REQ_PICK_FOLDER = 1;
     private static final String PREFS = "html_opener";
     private static final String KEY_TREE_URI = "tree_uri";
+    private static final String KEY_LINKS = "quick_links";
+    private static final String KEY_TAB = "current_tab";
+    private static final int TAB_APPS = 0;
+    private static final int TAB_LINKS = 1;
 
     private final List<WebApp> apps = new ArrayList<>();
+    private final List<Link> links = new ArrayList<>();
 
-    private AppAdapter adapter;
+    private AppAdapter appsAdapter;
+    private LinkAdapter linksAdapter;
     private TextView emptyTitle;
     private TextView emptyBody;
     private TextView folderView;
-    private TextView countView;
+    private TextView appCountView;
+    private TextView linkCountView;
+    private View pageApps;
+    private View pageLinks;
+    private View indicatorApps;
+    private View indicatorLinks;
+    private TextView labelApps;
+    private TextView labelLinks;
     private SharedPreferences prefs;
     private DocumentFile root;
     private HtmlServer server;
+    private int currentTab = TAB_APPS;
 
     private static final class WebApp {
         final String name;
@@ -49,6 +70,16 @@ public class MainActivity extends Activity {
         WebApp(String name, String entryPath) {
             this.name = name;
             this.entryPath = entryPath;
+        }
+    }
+
+    private static final class Link {
+        final String name;
+        final String url;
+
+        Link(String name, String url) {
+            this.name = name;
+            this.url = url;
         }
     }
 
@@ -63,21 +94,48 @@ public class MainActivity extends Activity {
         emptyTitle = findViewById(R.id.empty_title);
         emptyBody = findViewById(R.id.empty_body);
         folderView = findViewById(R.id.tv_folder);
-        countView = findViewById(R.id.tv_count);
-        View emptyState = findViewById(R.id.empty_state);
+        appCountView = findViewById(R.id.tv_count);
+        linkCountView = findViewById(R.id.tv_link_count);
+        pageApps = findViewById(R.id.page_apps);
+        pageLinks = findViewById(R.id.page_links);
+        indicatorApps = findViewById(R.id.indicator_apps);
+        indicatorLinks = findViewById(R.id.indicator_links);
+        labelApps = findViewById(R.id.label_apps);
+        labelLinks = findViewById(R.id.label_links);
+
+        View appEmptyState = findViewById(R.id.empty_state);
+        View linkEmptyState = findViewById(R.id.empty_links_state);
 
         applyTitleStyle();
+        applyLinksTitleStyle();
 
         TextView importButton = findViewById(R.id.btn_import);
         importButton.setOnClickListener(v -> chooseFolder());
+        TextView addLinkButton = findViewById(R.id.btn_add_link);
+        addLinkButton.setOnClickListener(v -> showLinkDialog(-1, false));
 
-        adapter = new AppAdapter();
-        ListView listView = findViewById(R.id.list_files);
-        listView.setAdapter(adapter);
-        listView.setEmptyView(emptyState);
-        listView.setOnItemClickListener((parent, view, position, id) -> openInBrowser(apps.get(position)));
+        appsAdapter = new AppAdapter();
+        ListView appsList = findViewById(R.id.list_files);
+        appsList.setAdapter(appsAdapter);
+        appsList.setEmptyView(appEmptyState);
+        appsList.setOnItemClickListener((parent, view, position, id) -> openInBrowser(apps.get(position)));
+
+        linksAdapter = new LinkAdapter();
+        ListView linksList = findViewById(R.id.list_links);
+        linksList.setAdapter(linksAdapter);
+        linksList.setEmptyView(linkEmptyState);
+        linksList.setOnItemClickListener((parent, view, position, id) -> openLink(links.get(position)));
+
+        findViewById(R.id.nav_apps).setOnClickListener(v -> showTab(TAB_APPS));
+        findViewById(R.id.nav_links).setOnClickListener(v -> showTab(TAB_LINKS));
 
         restoreFolder();
+        loadLinks();
+
+        currentTab = savedInstanceState == null
+                ? TAB_APPS
+                : savedInstanceState.getInt(KEY_TAB, TAB_APPS);
+        showTab(currentTab);
     }
 
     private void applyTitleStyle() {
@@ -92,10 +150,51 @@ public class MainActivity extends Activity {
         title.setText(styled);
     }
 
+    private void applyLinksTitleStyle() {
+        TextView title = findViewById(R.id.tv_links_title);
+        String text = getString(R.string.links_title);
+        SpannableString styled = new SpannableString(text);
+        if (text.endsWith(".")) {
+            styled.setSpan(new ForegroundColorSpan(getColor(R.color.swiss_red)),
+                    text.length() - 1, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        title.setText(styled);
+    }
+
     @Override
     protected void onResume() {
         super.onResume();
         refreshList();
+        refreshLinks();
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle outState) {
+        outState.putInt(KEY_TAB, currentTab);
+        super.onSaveInstanceState(outState);
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (currentTab != TAB_APPS) {
+            showTab(TAB_APPS);
+            return;
+        }
+        super.onBackPressed();
+    }
+
+    private void showTab(int tab) {
+        currentTab = tab;
+        boolean appsTab = tab == TAB_APPS;
+
+        pageApps.setVisibility(appsTab ? View.VISIBLE : View.GONE);
+        pageLinks.setVisibility(appsTab ? View.GONE : View.VISIBLE);
+
+        indicatorApps.setVisibility(appsTab ? View.VISIBLE : View.INVISIBLE);
+        indicatorLinks.setVisibility(appsTab ? View.INVISIBLE : View.VISIBLE);
+
+        labelApps.setTextColor(getColor(appsTab ? R.color.ink : R.color.muted));
+        labelLinks.setTextColor(getColor(appsTab ? R.color.muted : R.color.ink));
     }
 
     private void restoreFolder() {
@@ -211,7 +310,7 @@ public class MainActivity extends Activity {
             }
         }
 
-        adapter.notifyDataSetChanged();
+        appsAdapter.notifyDataSetChanged();
 
         emptyTitle.setText(root == null ? R.string.empty_title : R.string.empty_title_folder);
         emptyBody.setText(root == null ? R.string.empty_body : R.string.empty_body_folder);
@@ -226,7 +325,7 @@ public class MainActivity extends Activity {
             }
         }
         folderView.setText(folderName);
-        countView.setText(getString(R.string.app_count,
+        appCountView.setText(getString(R.string.app_count,
                 String.format(Locale.ROOT, "%02d", apps.size())));
     }
 
@@ -257,6 +356,177 @@ public class MainActivity extends Activity {
     private boolean isHtml(String name) {
         String lower = name.toLowerCase(Locale.ROOT);
         return lower.endsWith(".html") || lower.endsWith(".htm");
+    }
+
+    private void loadLinks() {
+        links.clear();
+        String json = prefs.getString(KEY_LINKS, "[]");
+        try {
+            JSONArray array = new JSONArray(json);
+            for (int i = 0; i < array.length(); i++) {
+                JSONObject object = array.optJSONObject(i);
+                if (object == null) {
+                    continue;
+                }
+                String name = object.optString("name", "");
+                String url = object.optString("url", "");
+                if (url.isEmpty()) {
+                    continue;
+                }
+                if (name.isEmpty()) {
+                    name = suggestName(url);
+                }
+                links.add(new Link(name, url));
+            }
+        } catch (JSONException ignored) {
+            // 数据损坏时按空列表处理。
+        }
+        refreshLinks();
+    }
+
+    private void saveLinks() {
+        JSONArray array = new JSONArray();
+        for (Link link : links) {
+            try {
+                JSONObject object = new JSONObject();
+                object.put("name", link.name);
+                object.put("url", link.url);
+                array.put(object);
+            } catch (JSONException ignored) {
+                // 字符串写入不会失败，忽略即可。
+            }
+        }
+        prefs.edit().putString(KEY_LINKS, array.toString()).apply();
+    }
+
+    private void refreshLinks() {
+        linksAdapter.notifyDataSetChanged();
+        linkCountView.setText(getString(R.string.link_count,
+                String.format(Locale.ROOT, "%02d", links.size())));
+    }
+
+    private void showLinkDialog(final int position, final boolean editing) {
+        View content = getLayoutInflater().inflate(R.layout.dialog_link, null);
+        final EditText nameInput = content.findViewById(R.id.et_link_name);
+        final EditText urlInput = content.findViewById(R.id.et_link_url);
+
+        if (editing) {
+            if (position < 0 || position >= links.size()) {
+                return;
+            }
+            Link link = links.get(position);
+            nameInput.setText(link.name);
+            urlInput.setText(link.url);
+            nameInput.setSelection(nameInput.length());
+        }
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this)
+                .setTitle(editing ? R.string.edit_link_title : R.string.add_link_title)
+                .setView(content)
+                .setNegativeButton(R.string.cancel, null)
+                .setPositiveButton(R.string.save, null);
+        if (editing) {
+            builder.setNeutralButton(R.string.delete, null);
+        }
+
+        final AlertDialog dialog = builder.create();
+        dialog.setOnShowListener(d -> {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+                String url = normalizeUrl(urlInput.getText().toString());
+                if (url == null) {
+                    Toast.makeText(this, R.string.invalid_url, Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                String name = nameInput.getText().toString().trim();
+                if (name.isEmpty()) {
+                    name = suggestName(url);
+                }
+                if (editing) {
+                    if (position >= 0 && position < links.size()) {
+                        links.set(position, new Link(name, url));
+                    }
+                } else {
+                    links.add(new Link(name, url));
+                }
+                saveLinks();
+                refreshLinks();
+                dialog.dismiss();
+            });
+
+            if (editing) {
+                dialog.getButton(AlertDialog.BUTTON_NEUTRAL)
+                        .setOnClickListener(v -> confirmDeleteLink(position, dialog));
+            }
+        });
+        dialog.show();
+        nameInput.requestFocus();
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setSoftInputMode(
+                    WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
+        }
+    }
+
+    private void confirmDeleteLink(final int position, final AlertDialog editDialog) {
+        if (position < 0 || position >= links.size()) {
+            return;
+        }
+        Link link = links.get(position);
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.delete_link_title)
+                .setMessage(getString(R.string.delete_link_message, link.name))
+                .setNegativeButton(R.string.cancel, null)
+                .setPositiveButton(R.string.delete, (dialog, which) -> {
+                    if (position < links.size()) {
+                        links.remove(position);
+                    }
+                    saveLinks();
+                    refreshLinks();
+                    editDialog.dismiss();
+                })
+                .show();
+    }
+
+    private String normalizeUrl(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String value = raw.trim();
+        if (value.isEmpty()) {
+            return null;
+        }
+        String lower = value.toLowerCase(Locale.ROOT);
+        if (!lower.startsWith("http://") && !lower.startsWith("https://")) {
+            if (lower.contains("://")) {
+                return null;
+            }
+            value = "https://" + value;
+        }
+        Uri uri = Uri.parse(value);
+        String host = uri.getHost();
+        if (host == null || host.isEmpty()) {
+            return null;
+        }
+        return value;
+    }
+
+    private String suggestName(String url) {
+        Uri uri = Uri.parse(url);
+        String host = uri.getHost();
+        if (host == null || host.isEmpty()) {
+            return url;
+        }
+        if (host.startsWith("www.")) {
+            host = host.substring(4);
+        }
+        return host;
+    }
+
+    private void openLink(Link link) {
+        try {
+            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(link.url)));
+        } catch (ActivityNotFoundException e) {
+            Toast.makeText(this, R.string.no_browser_link, Toast.LENGTH_SHORT).show();
+        }
     }
 
     private final class AppAdapter extends BaseAdapter {
@@ -293,6 +563,46 @@ public class MainActivity extends Activity {
             index.setText(String.format(Locale.ROOT, "%02d", position + 1));
             name.setText(app.name);
             entry.setText(entryFile(app.entryPath));
+            return view;
+        }
+    }
+
+    private final class LinkAdapter extends BaseAdapter {
+
+        private final LayoutInflater inflater = LayoutInflater.from(MainActivity.this);
+
+        @Override
+        public int getCount() {
+            return links.size();
+        }
+
+        @Override
+        public Link getItem(int position) {
+            return links.get(position);
+        }
+
+        @Override
+        public long getItemId(int position) {
+            return position;
+        }
+
+        @Override
+        public View getView(int position, View convertView, ViewGroup parent) {
+            View view = convertView;
+            if (view == null) {
+                view = inflater.inflate(R.layout.item_link, parent, false);
+            }
+
+            Link link = links.get(position);
+            TextView index = view.findViewById(R.id.tv_link_index);
+            TextView name = view.findViewById(R.id.tv_link_name);
+            TextView url = view.findViewById(R.id.tv_link_url);
+            TextView edit = view.findViewById(R.id.tv_link_edit);
+
+            index.setText(String.format(Locale.ROOT, "%02d", position + 1));
+            name.setText(link.name);
+            url.setText(link.url);
+            edit.setOnClickListener(v -> showLinkDialog(position, true));
             return view;
         }
     }

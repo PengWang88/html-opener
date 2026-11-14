@@ -41,6 +41,9 @@ public class MainActivity extends Activity {
     private static final String KEY_TAB = "current_tab";
     private static final int TAB_APPS = 0;
     private static final int TAB_LINKS = 1;
+    private static final String[] CHROME_PACKAGES = {
+            "com.android.chrome", "com.chrome.beta", "com.chrome.dev", "com.chrome.canary"
+    };
 
     private final List<WebApp> apps = new ArrayList<>();
     private final List<Link> links = new ArrayList<>();
@@ -617,14 +620,34 @@ public class MainActivity extends Activity {
             String url = server.urlFor(app.entryPath);
             startServerService();
 
-            Intent view = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-            // 不包 createChooser，让系统弹窗直接提供「仅一次 / 始终」。
-            startActivity(view);
+            // 显式指定 Chrome：本地 127.0.0.1 地址可能被已安装的 PWA/WebAPK 抢走，
+            // 隐式 ACTION_VIEW 会打开那个 PWA 而不是真正的浏览器。
+            if (!openInChrome(url)) {
+                stopService(new Intent(this, ServerService.class));
+                Toast.makeText(this, R.string.no_browser, Toast.LENGTH_SHORT).show();
+            }
         } catch (IOException e) {
             Toast.makeText(this, R.string.server_failed, Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private boolean openInChrome(String url) {
+        Intent base = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+        for (String packageName : CHROME_PACKAGES) {
+            try {
+                Intent chrome = new Intent(base);
+                chrome.setPackage(packageName);
+                startActivity(chrome);
+                return true;
+            } catch (ActivityNotFoundException | SecurityException ignored) {
+                // 尝试下一个 Chrome 渠道。
+            }
+        }
+        try {
+            startActivity(base);
+            return true;
         } catch (ActivityNotFoundException e) {
-            stopService(new Intent(this, ServerService.class));
-            Toast.makeText(this, R.string.no_browser, Toast.LENGTH_SHORT).show();
+            return false;
         }
     }
 

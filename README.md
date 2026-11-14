@@ -15,7 +15,7 @@
 
 发布版使用独立签名，与调试版签名不同：
 
-**从 v1.3 / v1.4 发布版升级**（同一签名，保留已导入目录和快捷链接）：
+**从 v1.3–v1.5 发布版升级**（同一签名，保留已导入目录和快捷链接）：
 
 ```bash
 adb install -r HTMLOpener-release.apk
@@ -33,9 +33,9 @@ adb install HTMLOpener-release.apk
 - 包名：`com.example.htmlopener`
 - 最低系统：Android 6.0（API 23）
 - 目标系统：Android 14（API 34）
-- 版本：1.5（versionCode 6）
+- 版本：1.6（versionCode 7）
 - 发布 APK 大小：约 112 KB
-- 发布 APK SHA-256：`54fa84393567a8d1f83cda5b8e91ce560af43130d6858dc2b48771dcbd497115`
+- 发布 APK SHA-256：`e3f85b3eb492be12478ed4c2308075e1ca5eba1878e60d1d334faa892e3f8902`
 
 ## 界面
 
@@ -77,6 +77,12 @@ adb install HTMLOpener-release.apk
 - 点击条目直接用浏览器打开。
 - 点条目右侧「编辑」可以修改名称/网址，也可以删除。
 - 链接保存在应用本地 `SharedPreferences` 中，不会上传到网络。
+
+## 浏览器选择
+
+- 本地 Web 应用会优先显式使用 Chrome 打开（依次尝试 `com.android.chrome`、`com.chrome.beta`、`com.chrome.dev`、`com.chrome.canary`），避免 `127.0.0.1` 地址被已安装的 PWA/WebAPK 接管。
+- 如果设备上没有 Chrome，会回退到系统默认浏览器。
+- 快捷链接不受此限制，仍按系统默认应用打开；指向 PWA 的链接会正常交给那个 PWA。
 
 ## 为什么用本地 HTTP 服务
 

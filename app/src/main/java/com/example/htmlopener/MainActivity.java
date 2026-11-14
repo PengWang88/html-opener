@@ -31,8 +31,10 @@ import org.json.JSONObject;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 public class MainActivity extends Activity {
 
@@ -41,6 +43,7 @@ public class MainActivity extends Activity {
     private static final String KEY_TREE_URI = "tree_uri";
     private static final String KEY_LINKS = "quick_links";
     private static final String KEY_TAB = "current_tab";
+    private static final String KEY_BROWSER_PACKAGE = "browser_package";
     private static final int TAB_APPS = 0;
     private static final int TAB_LINKS = 1;
 
@@ -61,6 +64,7 @@ public class MainActivity extends Activity {
     private TextView labelApps;
     private TextView labelLinks;
     private SharedPreferences prefs;
+    private String browserPackage;
     private DocumentFile root;
     private HtmlServer server;
     private int currentTab = TAB_APPS;
@@ -91,6 +95,7 @@ public class MainActivity extends Activity {
         setContentView(R.layout.activity_main);
 
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        browserPackage = prefs.getString(KEY_BROWSER_PACKAGE, null);
         server = HtmlServer.get(getApplicationContext());
 
         emptyTitle = findViewById(R.id.empty_title);
@@ -121,6 +126,12 @@ public class MainActivity extends Activity {
         appsList.setAdapter(appsAdapter);
         appsList.setEmptyView(appEmptyState);
         appsList.setOnItemClickListener((parent, view, position, id) -> openInBrowser(apps.get(position)));
+        appsList.setOnItemLongClickListener((parent, view, position, id) -> {
+            browserPackage = null;
+            prefs.edit().remove(KEY_BROWSER_PACKAGE).apply();
+            showBrowserPickerFor(apps.get(position));
+            return true;
+        });
 
         linksAdapter = new LinkAdapter();
         ListView linksList = findViewById(R.id.list_links);
@@ -617,57 +628,153 @@ public class MainActivity extends Activity {
     private void openInBrowser(WebApp app) {
         try {
             String url = server.urlFor(app.entryPath);
-            startServerService();
-
             Uri uri = Uri.parse(url);
-            Intent view = new Intent(Intent.ACTION_VIEW);
-            // 按 HTML 类型解析，而不是按普通网页链接解析，避免被 PWA/WebAPK 接管。
-            view.setDataAndType(uri, "text/html");
 
-            String htmlPackage = findHtmlHandlerPackage();
-            if (htmlPackage != null) {
-                // 不限制 MIME，直接把本地 http 地址交给 HTML 默认应用。
-                Intent targeted = new Intent(Intent.ACTION_VIEW, uri);
-                targeted.setPackage(htmlPackage);
-                try {
-                    startActivity(targeted);
-                    return;
-                } catch (ActivityNotFoundException | SecurityException ignored) {
-                    // 该 HTML 查看器不支持 http，回退到系统解析。
-                }
+            if (browserPackage != null && launchWithPackage(uri, browserPackage)) {
+                return;
             }
-            startActivity(view);
+            browserPackage = null;
+            prefs.edit().remove(KEY_BROWSER_PACKAGE).apply();
+            showBrowserPicker(uri);
         } catch (IOException e) {
             Toast.makeText(this, R.string.server_failed, Toast.LENGTH_LONG).show();
-        } catch (ActivityNotFoundException e) {
-            stopService(new Intent(this, ServerService.class));
-            Toast.makeText(this, R.string.no_browser, Toast.LENGTH_SHORT).show();
         }
     }
 
-    /** 查询系统当前打开本地 HTML 文件的默认应用，例如 Chrome。 */
-    private String findHtmlHandlerPackage() {
-        Uri[] probes = {
-                Uri.parse("file:///sdcard/index.html"),
-                Uri.parse("content://com.android.externalstorage.documents/document/primary%3ADownload%2Findex.html")
-        };
-        for (Uri probe : probes) {
-            Intent intent = new Intent(Intent.ACTION_VIEW);
-            intent.setDataAndType(probe, "text/html");
-            ResolveInfo info = getPackageManager().resolveActivity(
-                    intent, PackageManager.MATCH_DEFAULT_ONLY);
-            if (info == null || info.activityInfo == null) {
+    private void showBrowserPickerFor(WebApp app) {
+        try {
+            String url = server.urlFor(app.entryPath);
+            showBrowserPicker(Uri.parse(url));
+        } catch (IOException e) {
+            Toast.makeText(this, R.string.server_failed, Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void showBrowserPicker(final Uri uri) {
+        final List<BrowserOption> options = queryBrowserOptions(uri);
+        if (options.isEmpty()) {
+            if (!launchDefault(uri)) {
+                Toast.makeText(this, R.string.no_browser, Toast.LENGTH_SHORT).show();
+            }
+            return;
+        }
+
+        String[] labels = new String[options.size()];
+        for (int i = 0; i < options.size(); i++) {
+            labels[i] = options.get(i).label;
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.choose_browser_title)
+                .setMessage(R.string.choose_browser_message)
+                .setItems(labels, (dialog, which) -> {
+                    BrowserOption choice = options.get(which);
+                    browserPackage = choice.packageName;
+                    prefs.edit().putString(KEY_BROWSER_PACKAGE, browserPackage).apply();
+                    if (!launchWithPackage(uri, browserPackage)) {
+                        browserPackage = null;
+                        prefs.edit().remove(KEY_BROWSER_PACKAGE).apply();
+                        Toast.makeText(this, R.string.no_browser, Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .setNegativeButton(R.string.cancel, null)
+                .show();
+    }
+
+    private boolean launchWithPackage(Uri uri, String packageName) {
+        Intent intent = new Intent(Intent.ACTION_VIEW, uri);
+        intent.setPackage(packageName);
+        try {
+            startServerService();
+            startActivity(intent);
+            return true;
+        } catch (ActivityNotFoundException | SecurityException e) {
+            stopService(new Intent(this, ServerService.class));
+            return false;
+        }
+    }
+
+    private boolean launchDefault(Uri uri) {
+        Intent intent = new Intent(Intent.ACTION_VIEW);
+        intent.setDataAndType(uri, "text/html");
+        try {
+            startServerService();
+            startActivity(intent);
+            return true;
+        } catch (ActivityNotFoundException e) {
+            stopService(new Intent(this, ServerService.class));
+            return false;
+        }
+    }
+
+    private List<BrowserOption> queryBrowserOptions(Uri uri) {
+        Map<String, BrowserOption> byPackage = new LinkedHashMap<>();
+
+        Intent typed = new Intent(Intent.ACTION_VIEW);
+        typed.setDataAndType(uri, "text/html");
+        addBrowserOptions(typed, byPackage);
+        addBrowserOptions(new Intent(Intent.ACTION_VIEW, uri), byPackage);
+
+        List<BrowserOption> options = new ArrayList<>(byPackage.values());
+        options.sort((a, b) -> {
+            int priority = Integer.compare(a.chromePriority(), b.chromePriority());
+            if (priority != 0) {
+                return priority;
+            }
+            return String.CASE_INSENSITIVE_ORDER.compare(a.label, b.label);
+        });
+        return options;
+    }
+
+    private void addBrowserOptions(Intent intent, Map<String, BrowserOption> byPackage) {
+        PackageManager packageManager = getPackageManager();
+        for (ResolveInfo info : packageManager.queryIntentActivities(
+                intent, PackageManager.MATCH_ALL)) {
+            if (info.activityInfo == null) {
                 continue;
             }
             String packageName = info.activityInfo.packageName;
-            if (packageName == null || "android".equals(packageName)
-                    || packageName.equals(getPackageName())
-                    || packageName.toLowerCase(Locale.ROOT).contains("resolver")) {
+            if (packageName == null || packageName.equals(getPackageName())
+                    || byPackage.containsKey(packageName)
+                    || packageName.toLowerCase(Locale.ROOT).contains("webapk")) {
                 continue;
             }
-            return packageName;
+            String label;
+            try {
+                label = info.loadLabel(packageManager).toString();
+            } catch (Exception e) {
+                label = packageName;
+            }
+            if (label == null || label.trim().isEmpty()) {
+                label = packageName;
+            }
+            byPackage.put(packageName, new BrowserOption(label, packageName));
         }
-        return null;
+    }
+
+    private static final class BrowserOption {
+        final String label;
+        final String packageName;
+
+        BrowserOption(String label, String packageName) {
+            this.label = label;
+            this.packageName = packageName;
+        }
+
+        int chromePriority() {
+            switch (packageName) {
+                case "com.android.chrome":
+                    return 0;
+                case "com.chrome.beta":
+                    return 1;
+                case "com.chrome.dev":
+                    return 2;
+                case "com.chrome.canary":
+                    return 3;
+                default:
+                    return 4;
+            }
+        }
     }
 
     private void startServerService() {

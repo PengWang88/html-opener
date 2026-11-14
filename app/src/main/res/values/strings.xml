@@ -18,6 +18,8 @@
     <string name="pick_folder_hint">请选择包含 Web 应用子文件夹的目录</string>
     <string name="no_file_manager">没有找到文件管理器</string>
     <string name="no_browser">没有找到可以打开 HTML 的浏览器</string>
+    <string name="choose_browser_title">选择打开方式</string>
+    <string name="choose_browser_message">选择后会记住，长按应用可重新选择</string>
     <string name="no_browser_link">没有找到可以打开链接的浏览器</string>
     <string name="server_failed">启动本地文件服务失败</string>
     <string name="import_failed">导入失败：%1$s</string>

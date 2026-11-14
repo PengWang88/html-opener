@@ -1,16 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="brand_primary">#0F766E</color>
-    <color name="brand_primary_dark">#0B5F59</color>
-    <color name="brand_accent">#F59E0B</color>
-    <color name="screen_bg">#F4F7F6</color>
-    <color name="card_bg">#FFFFFF</color>
-    <color name="card_stroke">#E6ECEA</color>
-    <color name="card_pressed">#ECF6F3</color>
-    <color name="card_pressed_stroke">#CDE5DF</color>
-    <color name="text_primary">#1F2937</color>
-    <color name="text_secondary">#6B7280</color>
-    <color name="text_tertiary">#9CA3AF</color>
-    <color name="empty_badge_bg">#E6F4F1</color>
-    <color name="empty_badge_stroke">#D3E9E4</color>
+    <color name="paper">#FFFFFF</color>
+    <color name="ink">#0A0A0A</color>
+    <color name="swiss_red">#E2231A</color>
+    <color name="muted">#6B6B6B</color>
+    <color name="rule">#D9D9D9</color>
+    <color name="pressed">#F2F2F2</color>
 </resources>

@@ -12,27 +12,35 @@
 发布版 APK：[HTMLOpener-release.apk](HTMLOpener-release.apk)（已签名）
 调试版可通过 `./gradlew assembleDebug` 本地构建。
 
-发布版使用独立签名，与调试版签名不同。如果手机上装过调试版或其他签名的版本，必须先卸载，否则会提示签名不一致：
+发布版使用独立签名，与调试版签名不同：
+
+**从 v1.3 发布版升级**（同一签名，保留已导入目录）：
+
+```bash
+adb install -r HTMLOpener-release.apk
+```
+
+**从调试版或其他签名版本切换**（必须先卸载，已导入目录会清除）：
 
 ```bash
 adb uninstall com.example.htmlopener
 adb install HTMLOpener-release.apk
 ```
 
-卸载会清除已导入的文件夹授权，重新安装后需要点一次「导入」。也可以把 APK 传到手机上点击安装，系统会提示先卸载旧版本。
+也可以把 APK 传到手机上点击安装；签名不一致时系统会提示先卸载旧版本。
 
 - 包名：`com.example.htmlopener`
 - 最低系统：Android 6.0（API 23）
 - 目标系统：Android 14（API 34）
-- 版本：1.3（versionCode 4）
-- 发布 APK 大小：约 139 KB
-- 发布 APK SHA-256：`4dd8a4e5fbfb0e6338f8e8f8d59e1bcca108e9286058f01d22cbc8cd3386113c`
+- 版本：1.4（versionCode 5）
+- 发布 APK 大小：约 100 KB
+- 发布 APK SHA-256：`7a9734a7c2251e5ba5aa7ca1618a557f0e5981e226cbd489660e684c53d80192`
 
 ## 界面
 
-- 青绿色 Material 主题，卡片式应用列表：彩色首字母图标、应用名、入口文件。
-- 空列表时显示提示图标和引导文字。
-- 应用图标为青绿渐变底色 + 白色 HTML 文件 / `</>` 标记，包含自适应图标、圆形图标和旧版 PNG。
+- 瑞士国际主义风格：纯白、黑、红三色，大字号标题，编号列表，细线分隔，无圆角卡片。
+- 列表显示序号（01、02…）、应用名和入口文件；空状态使用大号“00”和引导文字。
+- 应用图标为红底白色 `<>` 标记，包含自适应图标、圆形图标和旧版 PNG。
 
 ![应用图标](app/src/main/res/mipmap-xxxhdpi/ic_launcher.png)
 
@@ -109,5 +117,6 @@ export ANDROID_HOME=/path/to/android-sdk
 - `app/src/main/java/com/example/htmlopener/MainActivity.java`：目录导入、Web 应用列表、调用浏览器
 - `app/src/main/java/com/example/htmlopener/HtmlServer.java`：仅监听 `127.0.0.1` 的静态文件服务
 - `app/src/main/java/com/example/htmlopener/ServerService.java`：保持服务进程存活的前台服务
-- `app/src/main/res/menu/menu_main.xml`：右上角「导入」菜单
-- `app/src/main/res/layout/activity_main.xml`：界面
+- `app/src/main/res/layout/activity_main.xml`：瑞士风格头部和列表
+- `app/src/main/res/layout/item_app.xml`：编号列表行
+- `app/src/main/res/values/colors.xml`、`styles.xml`：红黑白配色与主题

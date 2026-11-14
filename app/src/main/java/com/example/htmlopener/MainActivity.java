@@ -1,17 +1,16 @@
 package com.example.htmlopener;
 
-import android.app.ActionBar;
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.style.ForegroundColorSpan;
 import android.view.LayoutInflater;
-import android.view.Menu;
-import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.BaseAdapter;
@@ -32,16 +31,13 @@ public class MainActivity extends Activity {
     private static final String PREFS = "html_opener";
     private static final String KEY_TREE_URI = "tree_uri";
 
-    private static final int[] AVATAR_COLORS = {
-            0xFF0F766E, 0xFF2563EB, 0xFF7C3AED, 0xFFDB2777,
-            0xFFEA580C, 0xFF0891B2, 0xFF4F46E5, 0xFF059669
-    };
-
     private final List<WebApp> apps = new ArrayList<>();
 
     private AppAdapter adapter;
     private TextView emptyTitle;
     private TextView emptyBody;
+    private TextView folderView;
+    private TextView countView;
     private SharedPreferences prefs;
     private DocumentFile root;
     private HtmlServer server;
@@ -63,9 +59,17 @@ public class MainActivity extends Activity {
 
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         server = HtmlServer.get(getApplicationContext());
+
         emptyTitle = findViewById(R.id.empty_title);
         emptyBody = findViewById(R.id.empty_body);
+        folderView = findViewById(R.id.tv_folder);
+        countView = findViewById(R.id.tv_count);
         View emptyState = findViewById(R.id.empty_state);
+
+        applyTitleStyle();
+
+        TextView importButton = findViewById(R.id.btn_import);
+        importButton.setOnClickListener(v -> chooseFolder());
 
         adapter = new AppAdapter();
         ListView listView = findViewById(R.id.list_files);
@@ -76,25 +80,22 @@ public class MainActivity extends Activity {
         restoreFolder();
     }
 
+    private void applyTitleStyle() {
+        TextView title = findViewById(R.id.tv_title);
+        String text = getString(R.string.header_title);
+        SpannableString styled = new SpannableString(text);
+        int opener = text.indexOf("OPENER");
+        if (opener >= 0) {
+            styled.setSpan(new ForegroundColorSpan(getColor(R.color.swiss_red)),
+                    opener, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        title.setText(styled);
+    }
+
     @Override
     protected void onResume() {
         super.onResume();
         refreshList();
-    }
-
-    @Override
-    public boolean onCreateOptionsMenu(Menu menu) {
-        getMenuInflater().inflate(R.menu.menu_main, menu);
-        return true;
-    }
-
-    @Override
-    public boolean onOptionsItemSelected(MenuItem item) {
-        if (item.getItemId() == R.id.action_import) {
-            chooseFolder();
-            return true;
-        }
-        return super.onOptionsItemSelected(item);
     }
 
     private void restoreFolder() {
@@ -189,7 +190,7 @@ public class MainActivity extends Activity {
                 String rootEntry = findEntry(root);
                 if (rootEntry != null && isIndex(rootEntry)) {
                     String rootName = root.getName();
-                    apps.add(new WebApp(rootName == null ? "当前文件夹" : rootName, rootEntry));
+                    apps.add(new WebApp(rootName == null ? getString(R.string.current_folder) : rootName, rootEntry));
                 }
 
                 // 每个子文件夹视为一个 Web 应用。
@@ -215,19 +216,18 @@ public class MainActivity extends Activity {
         emptyTitle.setText(root == null ? R.string.empty_title : R.string.empty_title_folder);
         emptyBody.setText(root == null ? R.string.empty_body : R.string.empty_body_folder);
 
-        ActionBar bar = getActionBar();
-        if (bar != null) {
-            bar.setTitle(R.string.app_name);
-            if (root == null) {
-                bar.setSubtitle(R.string.subtitle_default);
-            } else {
-                String rootName = root.getName();
-                if (rootName == null) {
-                    rootName = getString(R.string.current_folder);
-                }
-                bar.setSubtitle(getString(R.string.subtitle_folder, rootName, apps.size()));
+        String folderName;
+        if (root == null) {
+            folderName = getString(R.string.folder_none);
+        } else {
+            folderName = root.getName();
+            if (folderName == null) {
+                folderName = getString(R.string.folder_none);
             }
         }
+        folderView.setText(folderName);
+        countView.setText(getString(R.string.app_count,
+                String.format(Locale.ROOT, "%02d", apps.size())));
     }
 
     /** 返回应用文件夹内的入口 HTML 相对路径：优先 index.html/.htm，否则第一个 HTML。 */
@@ -286,26 +286,13 @@ public class MainActivity extends Activity {
             }
 
             WebApp app = apps.get(position);
-            TextView avatar = view.findViewById(R.id.tv_avatar);
+            TextView index = view.findViewById(R.id.tv_index);
             TextView name = view.findViewById(R.id.tv_name);
             TextView entry = view.findViewById(R.id.tv_entry);
 
+            index.setText(String.format(Locale.ROOT, "%02d", position + 1));
             name.setText(app.name);
-            entry.setText(getString(R.string.entry_label, entryFile(app.entryPath)));
-
-            String initial = "?";
-            if (!app.name.isEmpty()) {
-                initial = new String(Character.toChars(app.name.codePointAt(0)))
-                        .toUpperCase(Locale.getDefault());
-            }
-            avatar.setText(initial);
-
-            GradientDrawable background = new GradientDrawable();
-            background.setShape(GradientDrawable.RECTANGLE);
-            background.setCornerRadius(dp(14));
-            background.setColor(AVATAR_COLORS[(app.name.hashCode() & 0x7fffffff)
-                    % AVATAR_COLORS.length]);
-            avatar.setBackground(background);
+            entry.setText(entryFile(app.entryPath));
             return view;
         }
     }
@@ -313,10 +300,6 @@ public class MainActivity extends Activity {
     private String entryFile(String entryPath) {
         int slash = entryPath.indexOf('/');
         return slash >= 0 ? entryPath.substring(slash + 1) : entryPath;
-    }
-
-    private int dp(int value) {
-        return Math.round(getResources().getDisplayMetrics().density * value);
     }
 
     private void openInBrowser(WebApp app) {

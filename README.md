@@ -15,7 +15,7 @@
 
 发布版使用独立签名，与调试版签名不同：
 
-**从 v1.3–v1.7 发布版升级**（同一签名，保留已导入目录和快捷链接）：
+**从 v1.3–v1.8 发布版升级**（同一签名，保留已导入目录和快捷链接）：
 
 ```bash
 adb install -r HTMLOpener-release.apk
@@ -33,9 +33,9 @@ adb install HTMLOpener-release.apk
 - 包名：`com.example.htmlopener`
 - 最低系统：Android 6.0（API 23）
 - 目标系统：Android 14（API 34）
-- 版本：1.8（versionCode 9）
-- 发布 APK 大小：约 114 KB
-- 发布 APK SHA-256：`e5ae72b4fad51fcf64ff13f1ef73cec670d7b7fa26cc43f05651d16247e73ae9`
+- 版本：1.9（versionCode 10）
+- 发布 APK 大小：约 113 KB
+- 发布 APK SHA-256：`47e34dbd3986c1929eac0267290dff49c23a8e53c2e5bdfc9a785e2b6de368e7`
 
 ## 界面
 
@@ -78,14 +78,11 @@ adb install HTMLOpener-release.apk
 - 点条目右侧「编辑」可以修改名称/网址，也可以删除。
 - 链接保存在应用本地 `SharedPreferences` 中，不会上传到网络。
 
-## 浏览器选择
+## 打开方式
 
-- 首次打开本地 Web 应用时，会显示应用自己的「选择打开方式」对话框。
-- 列表会过滤 WebAPK 类型的 PWA，Chrome 稳定版排在最前；选择后会被记住，之后直接使用这个应用。
-- 长按任意本地应用，可以重新选择打开方式。
-- 这样不再依赖 Android 的「HTML 默认应用」，避免 DSH 这类 PWA 被系统自动选中。
-- 快捷链接不受此限制，仍按系统默认应用打开；指向 PWA 的链接会正常交给那个 PWA。
-- 如果选择了 Chrome 但仍然被 DSH 接管，说明系统或 Chrome 自身仍把 localhost 地址转交给了 PWA；请先长按应用改选其他浏览器，或清除该 PWA 的默认设置。
+- 本地 Web 应用使用标准的 `ACTION_VIEW` 打开，由系统默认浏览器处理。
+- 如果手机上有多个浏览器，会弹出系统选择器，可以选择「仅一次 / 始终」。
+- 快捷链接同样按系统默认应用打开。
 
 ## 为什么用本地 HTTP 服务
 

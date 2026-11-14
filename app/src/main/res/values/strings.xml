@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">HTML 打开器</string>
+    <string name="import_action">导入</string>
+    <string name="subtitle_default">用浏览器打开本地 Web 应用</string>
+    <string name="current_folder">当前目录</string>
+    <string name="subtitle_folder">%1$s · %2$d 个应用</string>
+    <string name="empty_title">还没有 Web 应用</string>
+    <string name="empty_title_folder">这里没有 Web 应用</string>
+    <string name="empty_body">点击右上角「导入」，选择包含 Web 应用子文件夹的目录</string>
+    <string name="empty_body_folder">每个子文件夹需要包含 index.html，或至少一个 HTML 文件</string>
+    <string name="entry_label">入口 · %1$s</string>
+    <string name="pick_folder_hint">请选择包含 Web 应用子文件夹的目录</string>
+    <string name="no_file_manager">没有找到文件管理器</string>
+    <string name="no_browser">没有找到可以打开 HTML 的浏览器</string>
+    <string name="server_failed">启动本地文件服务失败</string>
+    <string name="import_failed">导入失败：%1$s</string>
+    <string name="no_apps">该目录下没有包含 HTML 的子文件夹</string>
+    <string name="server_channel_name">本地文件服务</string>
+    <string name="server_channel_description">保持浏览器读取本地 HTML 资源</string>
+    <string name="server_notification_title">HTML 文件服务运行中</string>
+    <string name="server_notification_text">浏览器正在读取所选文件夹中的资源</string>
+</resources>

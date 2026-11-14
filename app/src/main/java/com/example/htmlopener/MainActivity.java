@@ -5,6 +5,8 @@ import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -41,9 +43,6 @@ public class MainActivity extends Activity {
     private static final String KEY_TAB = "current_tab";
     private static final int TAB_APPS = 0;
     private static final int TAB_LINKS = 1;
-    private static final String[] CHROME_PACKAGES = {
-            "com.android.chrome", "com.chrome.beta", "com.chrome.dev", "com.chrome.canary"
-    };
 
     private final List<WebApp> apps = new ArrayList<>();
     private final List<Link> links = new ArrayList<>();
@@ -620,35 +619,55 @@ public class MainActivity extends Activity {
             String url = server.urlFor(app.entryPath);
             startServerService();
 
-            // 显式指定 Chrome：本地 127.0.0.1 地址可能被已安装的 PWA/WebAPK 抢走，
-            // 隐式 ACTION_VIEW 会打开那个 PWA 而不是真正的浏览器。
-            if (!openInChrome(url)) {
-                stopService(new Intent(this, ServerService.class));
-                Toast.makeText(this, R.string.no_browser, Toast.LENGTH_SHORT).show();
+            Uri uri = Uri.parse(url);
+            Intent view = new Intent(Intent.ACTION_VIEW);
+            // 按 HTML 类型解析，而不是按普通网页链接解析，避免被 PWA/WebAPK 接管。
+            view.setDataAndType(uri, "text/html");
+
+            String htmlPackage = findHtmlHandlerPackage();
+            if (htmlPackage != null) {
+                // 不限制 MIME，直接把本地 http 地址交给 HTML 默认应用。
+                Intent targeted = new Intent(Intent.ACTION_VIEW, uri);
+                targeted.setPackage(htmlPackage);
+                try {
+                    startActivity(targeted);
+                    return;
+                } catch (ActivityNotFoundException | SecurityException ignored) {
+                    // 该 HTML 查看器不支持 http，回退到系统解析。
+                }
             }
+            startActivity(view);
         } catch (IOException e) {
             Toast.makeText(this, R.string.server_failed, Toast.LENGTH_LONG).show();
+        } catch (ActivityNotFoundException e) {
+            stopService(new Intent(this, ServerService.class));
+            Toast.makeText(this, R.string.no_browser, Toast.LENGTH_SHORT).show();
         }
     }
 
-    private boolean openInChrome(String url) {
-        Intent base = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-        for (String packageName : CHROME_PACKAGES) {
-            try {
-                Intent chrome = new Intent(base);
-                chrome.setPackage(packageName);
-                startActivity(chrome);
-                return true;
-            } catch (ActivityNotFoundException | SecurityException ignored) {
-                // 尝试下一个 Chrome 渠道。
+    /** 查询系统当前打开本地 HTML 文件的默认应用，例如 Chrome。 */
+    private String findHtmlHandlerPackage() {
+        Uri[] probes = {
+                Uri.parse("file:///sdcard/index.html"),
+                Uri.parse("content://com.android.externalstorage.documents/document/primary%3ADownload%2Findex.html")
+        };
+        for (Uri probe : probes) {
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setDataAndType(probe, "text/html");
+            ResolveInfo info = getPackageManager().resolveActivity(
+                    intent, PackageManager.MATCH_DEFAULT_ONLY);
+            if (info == null || info.activityInfo == null) {
+                continue;
             }
+            String packageName = info.activityInfo.packageName;
+            if (packageName == null || "android".equals(packageName)
+                    || packageName.equals(getPackageName())
+                    || packageName.toLowerCase(Locale.ROOT).contains("resolver")) {
+                continue;
+            }
+            return packageName;
         }
-        try {
-            startActivity(base);
-            return true;
-        } catch (ActivityNotFoundException e) {
-            return false;
-        }
+        return null;
     }
 
     private void startServerService() {

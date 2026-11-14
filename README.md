@@ -85,7 +85,7 @@ adb install HTMLOpener-release.apk
 - 长按任意本地应用，可以重新选择打开方式。
 - 这样不再依赖 Android 的「HTML 默认应用」，避免 DSH 这类 PWA 被系统自动选中。
 - 快捷链接不受此限制，仍按系统默认应用打开；指向 PWA 的链接会正常交给那个 PWA。
-- 如果选择了 Chrome 但仍然被 DSH 接管，说明是 Chrome 自身把 localhost 地址转交给了 PWA，这种情况需要改成应用内 WebView 才能彻底隔离。
+- 如果选择了 Chrome 但仍然被 DSH 接管，说明系统或 Chrome 自身仍把 localhost 地址转交给了 PWA；请先长按应用改选其他浏览器，或清除该 PWA 的默认设置。
 
 ## 为什么用本地 HTTP 服务
 

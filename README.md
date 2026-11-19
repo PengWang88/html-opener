@@ -12,7 +12,7 @@
 
 ## 安装
 
-仓库内附带的已签名 APK 是 v1.11（versionCode 12）。v1.12 的写权限与 JSON 写接口在源码中，需要按「重新构建」打包后再覆盖安装。
+仓库内附带的已签名 APK 是 v1.12（versionCode 13），包含写权限和 JSON 写接口。
 调试版可通过 `./gradlew assembleDebug` 本地构建。
 
 发布版使用独立签名，与调试版签名不同：
@@ -38,8 +38,8 @@ adb install HTMLOpener-release.apk
 - 最低系统：Android 6.0（API 23）
 - 目标系统：Android 14（API 34）
 - 源码版本：1.12（versionCode 13）
-- 仓库内 APK：v1.11（versionCode 12），约 116 KB
-- v1.11 APK SHA-256：`a9030875d150add2d2aa7cf69758f439830f9c1c002b8dce965338f637ec54b2`
+- 仓库内 APK：v1.12（versionCode 13），约 122 KB
+- v1.12 APK SHA-256：`f73a4db69ea17ecb3f66f661594c9cba1d3ef246e74552c9c5c0e2e6ae023dba`
 
 ## 界面
 
@@ -215,9 +215,40 @@ export ANDROID_HOME=/path/to/android-sdk
 
 ## 发布签名
 
+- 公开证书：`signing/htmlopener-release-cert.pem`（只含公钥，可安全加入仓库）
 - 密钥库：`release.keystore`（PKCS12，别名 `htmlopener`，RSA 2048，有效期 10000 天）
-- 签名配置：`keystore.properties`（包含密码，已加入 `.gitignore`，不要提交到公开仓库）
+- 签名配置：`keystore.properties`（包含密钥库密码，已加入 `.gitignore`）
 - 证书 SHA-256：`06f86bec15f725eea955a18f8138daf646a668d28f3c78dc2fc6c8d1b32eeccc`
+
+**私钥密钥库和密码不会加入仓库，也不能提交到公开仓库。** 它们只应通过安全方式备份和复制。以后在本机或其他机器构建同签名 APK 时，必须使用同一份 `release.keystore`、相同的 `keyAlias` 和密码；`signing/htmlopener-release-cert.pem` 仅用于校验，不能用于签名。
+
+### 多机编译同签名 APK
+
+先把 `release.keystore` 和 `keystore.properties` 安全复制到另一台机器的项目根目录并限制权限：
+
+```bash
+chmod 600 release.keystore keystore.properties
+```
+
+然后执行：
+
+```bash
+export JAVA_HOME=/path/to/jdk17
+export ANDROID_HOME=/path/to/android-sdk
+./gradlew clean assembleRelease
+```
+
+### 校验 APK 签名
+
+```bash
+apksigner verify --print-certs HTMLOpener-release.apk
+```
+
+输出的 `Signer #1 certificate SHA-256 digest` 应与上面的证书 SHA-256 一致。也可以直接校验公开证书：
+
+```bash
+openssl x509 -in signing/htmlopener-release-cert.pem -noout -fingerprint -sha256
+```
 
 请把 `release.keystore` 和 `keystore.properties` 离线备份。以后发布更新必须使用同一签名；丢失后无法覆盖安装旧版本，只能卸载重装或更换包名。
 

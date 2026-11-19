@@ -5,6 +5,7 @@ import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.UriPermission;
 import android.content.pm.ShortcutInfo;
 import android.content.pm.ShortcutManager;
 import android.graphics.Bitmap;
@@ -36,7 +37,10 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -69,6 +73,7 @@ public class MainActivity extends Activity {
     private TextView folderView;
     private TextView appCountView;
     private TextView linkCountView;
+    private TextView modeView;
     private View pageApps;
     private View pageLinks;
     private View indicatorApps;
@@ -79,6 +84,8 @@ public class MainActivity extends Activity {
     private DocumentFile root;
     private HtmlServer server;
     private int currentTab = TAB_APPS;
+    private boolean folderWritable;
+    private boolean writeUpgradeNeeded;
 
     private static final class WebApp {
         final String name;
@@ -113,6 +120,7 @@ public class MainActivity extends Activity {
         folderView = findViewById(R.id.tv_folder);
         appCountView = findViewById(R.id.tv_count);
         linkCountView = findViewById(R.id.tv_link_count);
+        modeView = findViewById(R.id.tv_mode);
         pageApps = findViewById(R.id.page_apps);
         pageLinks = findViewById(R.id.page_links);
         indicatorApps = findViewById(R.id.indicator_apps);
@@ -169,6 +177,7 @@ public class MainActivity extends Activity {
                 ? TAB_APPS
                 : savedInstanceState.getInt(KEY_TAB, TAB_APPS);
         showTab(currentTab);
+        maybePromptWriteUpgrade(savedInstanceState);
 
         // 从桌面快捷方式冷启动时直接打开对应条目。配置变更重建时不再重复打开。
         if (savedInstanceState == null) {
@@ -252,7 +261,11 @@ public class MainActivity extends Activity {
             DocumentFile dir = DocumentFile.fromTreeUri(getApplicationContext(), uri);
             if (dir != null && dir.isDirectory() && dir.canRead()) {
                 root = dir;
-                server.setRoot(dir);
+                boolean writeGranted = hasWritePermission(uri);
+                boolean canWrite = writeGranted && dir.canWrite();
+                folderWritable = canWrite;
+                writeUpgradeNeeded = !writeGranted;
+                server.setRoot(dir, canWrite);
             } else {
                 clearSavedFolder();
             }
@@ -264,7 +277,83 @@ public class MainActivity extends Activity {
     private void clearSavedFolder() {
         prefs.edit().remove(KEY_TREE_URI).apply();
         root = null;
-        server.setRoot(null);
+        folderWritable = false;
+        writeUpgradeNeeded = false;
+        server.setRoot(null, false);
+    }
+
+    private boolean hasWritePermission(Uri uri) {
+        try {
+            for (UriPermission permission
+                    : getContentResolver().getPersistedUriPermissions()) {
+                if (permission.getUri().equals(uri)
+                        && permission.isWritePermission()) {
+                    return true;
+                }
+            }
+        } catch (Exception ignored) {
+            // 权限查询失败时按只读处理。
+        }
+        return false;
+    }
+
+    private void maybePromptWriteUpgrade(Bundle savedInstanceState) {
+        if (savedInstanceState != null || root == null) {
+            return;
+        }
+        if (writeUpgradeNeeded) {
+            new AlertDialog.Builder(this)
+                    .setTitle(R.string.read_only_title)
+                    .setMessage(R.string.read_only_upgrade_message)
+                    .setPositiveButton(R.string.reimport,
+                            (dialog, which) -> chooseFolder())
+                    .setNegativeButton(R.string.later, null)
+                    .show();
+        } else if (!folderWritable) {
+            Toast.makeText(this, R.string.read_only_warning, Toast.LENGTH_LONG).show();
+        }
+    }
+
+    /** 导入时做一次真实的创建、写入、删除探测，避免只依赖 canWrite() 标志。 */
+    private boolean probeWritable(DocumentFile dir) {
+        if (!dir.canWrite()) {
+            return false;
+        }
+
+        DocumentFile probe = null;
+        try {
+            String name = "htmlopener_write_probe_"
+                    + Long.toHexString(System.nanoTime()) + ".json";
+            probe = dir.createFile("application/json", name);
+            if (probe == null) {
+                return false;
+            }
+
+            OutputStream out;
+            try {
+                out = getContentResolver().openOutputStream(probe.getUri(), "wt");
+            } catch (FileNotFoundException e) {
+                out = getContentResolver().openOutputStream(probe.getUri(), "w");
+            }
+            if (out == null) {
+                return false;
+            }
+            try (OutputStream stream = out) {
+                stream.write("{}".getBytes(StandardCharsets.UTF_8));
+                stream.flush();
+            }
+            return true;
+        } catch (Exception e) {
+            return false;
+        } finally {
+            if (probe != null) {
+                try {
+                    probe.delete();
+                } catch (Exception ignored) {
+                    // 清理失败时保留探测文件，不影响正常使用。
+                }
+            }
+        }
     }
 
     private void chooseFolder() {
@@ -272,6 +361,7 @@ public class MainActivity extends Activity {
 
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                 | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
         try {
             startActivityForResult(intent, REQ_PICK_FOLDER);
@@ -290,11 +380,18 @@ public class MainActivity extends Activity {
 
         Uri uri = data.getData();
         try {
-            int takeFlags = data.getFlags() & Intent.FLAG_GRANT_READ_URI_PERMISSION;
-            if (takeFlags == 0) {
-                takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION;
+            boolean writeGranted = true;
+            try {
+                getContentResolver().takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            } catch (SecurityException e) {
+                // 个别文件管理器只授予读权限，退回只读授权。
+                writeGranted = false;
+                getContentResolver().takePersistableUriPermission(
+                        uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
             }
-            getContentResolver().takePersistableUriPermission(uri, takeFlags);
 
             DocumentFile dir = DocumentFile.fromTreeUri(getApplicationContext(), uri);
             if (dir == null || !dir.isDirectory() || !dir.canRead()) {
@@ -305,17 +402,32 @@ public class MainActivity extends Activity {
             if (old != null && !old.equals(uri.toString())) {
                 try {
                     getContentResolver().releasePersistableUriPermission(
-                            Uri.parse(old), Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                            Uri.parse(old),
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                    | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
                 } catch (Exception ignored) {
-                    // 旧授权可能已经失效，忽略即可。
+                    try {
+                        getContentResolver().releasePersistableUriPermission(
+                                Uri.parse(old),
+                                Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    } catch (Exception ignoredAgain) {
+                        // 旧授权可能已经失效，忽略即可。
+                    }
                 }
             }
 
             prefs.edit().putString(KEY_TREE_URI, uri.toString()).apply();
             root = dir;
-            server.setRoot(dir);
+            boolean writable = writeGranted && dir.canWrite() && probeWritable(dir);
+            folderWritable = writable;
+            writeUpgradeNeeded = !writeGranted;
+            server.setRoot(dir, writable);
             refreshList();
 
+            if (!writable) {
+                Toast.makeText(this, R.string.read_only_warning,
+                        Toast.LENGTH_LONG).show();
+            }
             if (apps.isEmpty()) {
                 Toast.makeText(this, R.string.no_apps, Toast.LENGTH_LONG).show();
             }
@@ -372,6 +484,18 @@ public class MainActivity extends Activity {
         folderView.setText(folderName);
         appCountView.setText(getString(R.string.app_count,
                 String.format(Locale.ROOT, "%02d", apps.size())));
+
+        if (root == null) {
+            modeView.setVisibility(View.GONE);
+        } else {
+            modeView.setVisibility(View.VISIBLE);
+            modeView.setText(folderWritable
+                    ? R.string.folder_writable
+                    : R.string.folder_readonly);
+            modeView.setTextColor(getColor(folderWritable
+                    ? R.color.muted
+                    : R.color.swiss_red));
+        }
     }
 
     /** 返回应用文件夹内的入口 HTML 相对路径：优先 index.html/.htm，否则第一个 HTML。 */

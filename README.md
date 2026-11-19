@@ -8,15 +8,16 @@
 2. 点击列表中的子文件夹，用手机上的浏览器打开对应的 Web 应用。系统弹窗会提供「仅一次 / 始终」。
 3. 底部切换到「02 链接」，可以添加、编辑、删除常用网址，点击直接用浏览器打开。
 4. 长按应用或链接条目，可以把该条目添加为桌面快捷方式。
+5. Web 应用可以通过同源 `fetch` 读写自身目录下的 `state.json` 和 `articles/*.json`（v1.12+，导入时需要授予写权限）。
 
 ## 安装
 
-发布版 APK：[HTMLOpener-release.apk](HTMLOpener-release.apk)（已签名）
+仓库内附带的已签名 APK 是 v1.11（versionCode 12）。v1.12 的写权限与 JSON 写接口在源码中，需要按「重新构建」打包后再覆盖安装。
 调试版可通过 `./gradlew assembleDebug` 本地构建。
 
 发布版使用独立签名，与调试版签名不同：
 
-**从 v1.3–v1.8 发布版升级**（同一签名，保留已导入目录和快捷链接）：
+**从 v1.3–v1.11 发布版升级**（同一签名，保留已导入目录和快捷链接）：
 
 ```bash
 adb install -r HTMLOpener-release.apk
@@ -31,12 +32,14 @@ adb install HTMLOpener-release.apk
 
 也可以把 APK 传到手机上点击安装；签名不一致时系统会提示先卸载旧版本。
 
+从 v1.11 升级到 v1.12 后，原有目录授权仍然只有读权限：应用会显示「只读」，保存接口返回 `403`。请点「导入 +」重新选择同一文件夹，并在系统提示中允许修改；`state.json` 和 `articles/` 中的数据不会丢失。
+
 - 包名：`com.example.htmlopener`
 - 最低系统：Android 6.0（API 23）
 - 目标系统：Android 14（API 34）
-- 版本：1.11（versionCode 12）
-- 发布 APK 大小：约 116 KB
-- 发布 APK SHA-256：`a9030875d150add2d2aa7cf69758f439830f9c1c002b8dce965338f637ec54b2`
+- 源码版本：1.12（versionCode 13）
+- 仓库内 APK：v1.11（versionCode 12），约 116 KB
+- v1.11 APK SHA-256：`a9030875d150add2d2aa7cf69758f439830f9c1c002b8dce965338f637ec54b2`
 
 ## 界面
 
@@ -70,6 +73,7 @@ adb install HTMLOpener-release.apk
 - 只扫描一级子文件夹；子文件夹内部的 JS/CSS/图片等资源不受目录层级限制，均可加载。
 - 如果所选父目录自身包含 `index.html`，父目录也会显示为一个应用。
 - 如果某个子文件夹内没有 HTML，则不会出现在列表中。
+- 应用可通过写接口维护自己的 `state.json` 和 `articles/*.json`；这些 JSON 数据文件和普通资源一样放在应用目录里，不会被单独列为应用。
 
 ## 快捷链接
 
@@ -87,6 +91,82 @@ adb install HTMLOpener-release.apk
 - Android 7.1 及以下使用旧版桌面快捷方式广播，兼容性取决于手机桌面。
 - 本地 Web 应用快捷方式在点击时会重新启动本地文件服务，因此即使应用进程已被回收也能正常打开；如果原目录授权已失效，需要回到应用重新导入目录。
 - 如果桌面不支持固定快捷方式，应用会提示「当前桌面不支持添加固定快捷方式」。
+
+## Web 应用保存数据（v1.12+）
+
+页面可以把 JSON 数据写在应用自己的目录里，不需要额外后端、CORS 或浏览器 `localStorage`。写接口和页面使用同一个本地服务、同一个端口和随机 token，页面直接用相对路径访问即可。
+
+```js
+async function saveState(state) {
+  const res = await fetch('./state.json', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(state)
+  });
+  if (!res.ok) throw new Error(await res.text());
+}
+
+async function loadState() {
+  const res = await fetch('./state.json', { cache: 'no-store' });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+```
+
+文章也可以按文件保存：
+
+```js
+const url = './articles/' + encodeURIComponent(id) + '.json';
+
+await fetch(url, {
+  method: 'PUT',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(article)
+});
+
+await fetch(url, { method: 'DELETE' });
+```
+
+### 支持的方法与路径
+
+| 方法 | 路径 | 结果 |
+| --- | --- | --- |
+| `GET` / `HEAD` | 任意文件 | 原有静态文件读取 |
+| `PUT` | `<应用目录>/state.json` | 不存在时创建，返回 `201`；已存在时覆盖，返回 `204` |
+| `PUT` | `<应用目录>/articles/<name>.json` | 同上；首次写入会自动创建 `articles/` |
+| `DELETE` | `<应用目录>/state.json` | 成功返回 `204`，文件不存在返回 `404` |
+| `DELETE` | `<应用目录>/articles/<name>.json` | 成功返回 `204`；只能删除文件，目录返回 `403` |
+
+- “应用目录”指当前页面所属的一级应用文件夹；如果父目录自身就是应用，则是父目录根。
+- 页面在应用目录根部时，`fetch('./state.json')` 就是 `<应用目录>/state.json`。页面在子目录时，请使用正确的相对路径（例如 `../state.json`）；写入目标必须仍在当前应用目录内。
+- 同源页面发起的请求会被限定在当前应用目录：服务端用同源 `Referer` 识别页面所属应用，从页面内 `fetch` 会自动携带 Referer。没有 Referer 的命令行请求只按路径形状做兜底校验，不保证跨应用隔离。
+- 页面不要设置 `no-referrer` 等 `Referrer-Policy`；缺少 Referer 时服务端只能按路径形状校验，跨应用隔离会失效。
+- `PUT` 必须显式带 `Content-Type: application/json`（可以带 `; charset=utf-8`）；只写 `.json` 文件，`state.json` 和 `articles/` 以外的路径会被拒绝。
+- 请求体上限 1 MiB（1,048,576 字节）；`PUT` 必须带合法的 `Content-Length`。
+- 请使用普通字符串或 `Blob` 作为 `body`，浏览器会自动带 `Content-Length`；流式 `ReadableStream` 会变成 chunked，服务端不支持。
+- 只允许删除文件；删除目录、删除非 `.json` 文件都会被拒绝。
+- `<name>` 不能包含 `/`、`\`，也不能是 `.` 或 `..`；建议只用字母、数字、`-`、`_`，例如 `a1`、`note-2026`。
+- 不提供 CORS 头，也不支持 `POST`；页面必须从同一个本地服务加载。
+
+### 状态码
+
+- `201`：PUT 新建成功
+- `204`：PUT 覆盖成功，或 DELETE 成功
+- `400`：请求格式错误、`Content-Type` 不是 `application/json`、缺少/非法 `Content-Length`、路径穿越
+- `403`：文件夹只读、目标不是 `.json`、越出当前应用目录、试图删除目录
+- `404`：文件或应用目录不存在
+- `405`：不支持的请求方法（例如 `POST`）
+- `413`：请求体超过 1 MiB
+- `500`：创建、写入或删除失败
+
+错误响应是 `text/plain; charset=utf-8` 的简短中文说明，不含堆栈信息。页面应把响应文本显示给用户：
+
+```js
+if (!res.ok) alert(await res.text());
+```
+
+数据就是文件夹里的普通文件，关闭应用、重启手机、端口变化后仍然存在；备份所选文件夹即可备份数据。
 
 ## 打开方式
 
@@ -106,11 +186,14 @@ http://127.0.0.1:<随机端口>/t/<随机令牌>/app-one/index.html
 
 这样以父目录为网站根目录，`app-one/style.css`、`app-one/js/app.js`、甚至 `../shared/...` 都能正确加载；修改原文件后刷新浏览器即可看到变化。随机端口和随机路径令牌降低被其他应用读取的风险。
 
+同一个服务还提供受限的 JSON 写接口，只允许修改当前应用的 `state.json` 和 `articles/*.json`，不额外开端口。
+
 说明：
 
 - 需要把所选父目录理解为网站根目录；`../` 跳出该父目录的引用无法访问。
 - 浏览器和本应用是分开的进程。打开页面时应用会启动一个低优先级的前台服务，避免浏览器在前台时本应用进程被系统回收；把应用从最近任务中划掉后服务会停止。Android 13 及以上若未授予通知权限，通知可能不显示在通知栏，但服务仍会运行。
 - 文件夹授权会被持久保存，重启应用后仍然有效；如果原文件夹被移动/删除，需要重新导入。
+- v1.12 起导入时会同时申请读、写权限，并做一次真实写入探测；旧版本保存的授权只有读权限，需要重新导入后 Web 应用才能保存数据。应用页的文件夹信息旁会显示「可写」或「只读」。
 - 如果页面刷新时仍提示连接被拒绝，请回到应用重新点击一次文件。
 
 ## 重新构建
@@ -140,8 +223,8 @@ export ANDROID_HOME=/path/to/android-sdk
 
 ## 主要文件
 
-- `app/src/main/java/com/example/htmlopener/MainActivity.java`：目录导入、Web 应用列表、快捷链接、桌面快捷方式、底部导航
-- `app/src/main/java/com/example/htmlopener/HtmlServer.java`：仅监听 `127.0.0.1` 的静态文件服务
+- `app/src/main/java/com/example/htmlopener/MainActivity.java`：目录导入与读写授权、只读提示、Web 应用列表、快捷链接、桌面快捷方式、底部导航
+- `app/src/main/java/com/example/htmlopener/HtmlServer.java`：仅监听 `127.0.0.1` 的静态文件服务，以及受限的 JSON `PUT` / `DELETE` 写接口
 - `app/src/main/java/com/example/htmlopener/ServerService.java`：保持服务进程存活的前台服务
 - `app/src/main/res/layout/activity_main.xml`：页面容器和底部导航
 - `app/src/main/res/layout/page_apps.xml`、`page_links.xml`：应用页、链接页

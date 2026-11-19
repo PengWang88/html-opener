@@ -6,6 +6,13 @@
     <string name="header_subtitle">本地 HTML 应用浏览器 · 长按条目添加桌面快捷方式</string>
     <string name="import_action">导入 +</string>
     <string name="folder_none">未导入目录</string>
+    <string name="folder_writable">可写</string>
+    <string name="folder_readonly">只读</string>
+    <string name="read_only_title">文件夹只读</string>
+    <string name="read_only_upgrade_message">当前文件夹只有读取权限，Web 应用无法保存数据。\n\n请重新导入同一文件夹，并在系统提示中允许修改。</string>
+    <string name="reimport">重新导入</string>
+    <string name="later">稍后</string>
+    <string name="read_only_warning">文件夹只读：Web 应用无法保存数据，请重新导入并允许修改</string>
     <string name="current_folder">当前文件夹</string>
     <string name="empty_zero">00</string>
     <string name="app_count_zero">00 个应用</string>

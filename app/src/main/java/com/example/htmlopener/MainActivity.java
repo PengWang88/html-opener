@@ -2,6 +2,7 @@ package com.example.htmlopener;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.ProgressDialog;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -9,9 +10,11 @@ import android.content.UriPermission;
 import android.content.pm.ShortcutInfo;
 import android.content.pm.ShortcutManager;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.graphics.drawable.Icon;
@@ -21,13 +24,16 @@ import android.os.Bundle;
 import android.text.SpannableString;
 import android.text.Spanned;
 import android.text.style.ForegroundColorSpan;
+import android.view.HapticFeedbackConstants;
 import android.view.LayoutInflater;
+import android.view.Menu;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.BaseAdapter;
 import android.widget.EditText;
 import android.widget.ListView;
+import android.widget.PopupMenu;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -37,8 +43,10 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.ByteArrayOutputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -63,6 +71,11 @@ public class MainActivity extends Activity {
     private static final String SHORTCUT_TYPE_APP = "app";
     private static final String SHORTCUT_TYPE_LINK = "link";
 
+    private static final int MENU_OPEN = 1;
+    private static final int MENU_RENAME = 2;
+    private static final int MENU_ADD_SHORTCUT = 3;
+    private static final int MENU_DELETE = 4;
+
     private final List<WebApp> apps = new ArrayList<>();
     private final List<Link> links = new ArrayList<>();
 
@@ -83,6 +96,7 @@ public class MainActivity extends Activity {
     private SharedPreferences prefs;
     private DocumentFile root;
     private HtmlServer server;
+    private PopupMenu activePopup;
     private int currentTab = TAB_APPS;
     private boolean folderWritable;
     private boolean writeUpgradeNeeded;
@@ -148,8 +162,8 @@ public class MainActivity extends Activity {
             if (position < 0 || position >= apps.size()) {
                 return false;
             }
-            WebApp app = apps.get(position);
-            addShortcutToDesktop(SHORTCUT_TYPE_APP, app.name, app.entryPath);
+            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+            showAppMenu(view, position);
             return true;
         });
 
@@ -162,8 +176,8 @@ public class MainActivity extends Activity {
             if (position < 0 || position >= links.size()) {
                 return false;
             }
-            Link link = links.get(position);
-            addShortcutToDesktop(SHORTCUT_TYPE_LINK, link.name, link.url);
+            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+            showLinkMenu(view, position);
             return true;
         });
 
@@ -650,17 +664,367 @@ public class MainActivity extends Activity {
                     }
                     saveLinks();
                     refreshLinks();
-                    editDialog.dismiss();
+                    if (editDialog != null) {
+                        editDialog.dismiss();
+                    }
                 })
                 .show();
     }
 
+    private void showAppMenu(final View anchor, final int position) {
+        if (position < 0 || position >= apps.size()) {
+            return;
+        }
+        final WebApp app = apps.get(position);
+        PopupMenu popup = new PopupMenu(this, anchor);
+        Menu menu = popup.getMenu();
+        menu.add(Menu.NONE, MENU_OPEN, 1, R.string.menu_open);
+        menu.add(Menu.NONE, MENU_RENAME, 2, R.string.menu_rename);
+        menu.add(Menu.NONE, MENU_ADD_SHORTCUT, 3, R.string.menu_add_shortcut);
+        menu.add(Menu.NONE, MENU_DELETE, 4, R.string.menu_delete);
+        popup.setOnMenuItemClickListener(item -> {
+            switch (item.getItemId()) {
+                case MENU_OPEN:
+                    openInBrowser(app);
+                    return true;
+                case MENU_RENAME:
+                    renameApp(position);
+                    return true;
+                case MENU_ADD_SHORTCUT:
+                    addShortcutToDesktop(SHORTCUT_TYPE_APP, app.name,
+                            app.entryPath, loadAppIcon(app));
+                    return true;
+                case MENU_DELETE:
+                    confirmDeleteApp(position);
+                    return true;
+                default:
+                    return false;
+            }
+        });
+        showPopup(popup);
+    }
+
+    private void showLinkMenu(final View anchor, final int position) {
+        if (position < 0 || position >= links.size()) {
+            return;
+        }
+        final Link link = links.get(position);
+        PopupMenu popup = new PopupMenu(this, anchor);
+        Menu menu = popup.getMenu();
+        menu.add(Menu.NONE, MENU_OPEN, 1, R.string.menu_open);
+        menu.add(Menu.NONE, MENU_RENAME, 2, R.string.menu_rename);
+        menu.add(Menu.NONE, MENU_ADD_SHORTCUT, 3, R.string.menu_add_shortcut);
+        menu.add(Menu.NONE, MENU_DELETE, 4, R.string.menu_delete);
+        popup.setOnMenuItemClickListener(item -> {
+            switch (item.getItemId()) {
+                case MENU_OPEN:
+                    openLink(link);
+                    return true;
+                case MENU_RENAME:
+                    showLinkDialog(position, true);
+                    return true;
+                case MENU_ADD_SHORTCUT:
+                    addShortcutToDesktop(SHORTCUT_TYPE_LINK, link.name, link.url);
+                    return true;
+                case MENU_DELETE:
+                    confirmDeleteLink(position, null);
+                    return true;
+                default:
+                    return false;
+            }
+        });
+        showPopup(popup);
+    }
+
+    private void showPopup(PopupMenu popup) {
+        if (activePopup != null) {
+            activePopup.dismiss();
+        }
+        activePopup = popup;
+        popup.setOnDismissListener(menu -> {
+            if (activePopup == popup) {
+                activePopup = null;
+            }
+        });
+        popup.show();
+    }
+
+    private void renameApp(final int position) {
+        if (position < 0 || position >= apps.size()) {
+            return;
+        }
+        final WebApp app = apps.get(position);
+        final DocumentFile dir = appDirectory(app);
+        if (dir == null) {
+            Toast.makeText(this, R.string.app_folder_missing, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (app.entryPath.indexOf('/') < 0) {
+            Toast.makeText(this, R.string.rename_app_root, Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        View content = getLayoutInflater().inflate(R.layout.dialog_rename, null);
+        final EditText input = content.findViewById(R.id.et_rename);
+        input.setText(app.name);
+        input.setSelection(input.length());
+
+        final AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(R.string.rename_app_title)
+                .setView(content)
+                .setNegativeButton(R.string.cancel, null)
+                .setPositiveButton(R.string.save, null)
+                .create();
+        dialog.setOnShowListener(d -> {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+                String newName = input.getText().toString().trim();
+                String error = validateAppName(newName);
+                if (error != null) {
+                    Toast.makeText(this, error, Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                if (newName.equals(app.name)) {
+                    dialog.dismiss();
+                    return;
+                }
+
+                DocumentFile existing = root == null ? null : root.findFile(newName);
+                if (existing != null && !existing.getUri().equals(dir.getUri())) {
+                    Toast.makeText(this, R.string.rename_app_exists,
+                            Toast.LENGTH_SHORT).show();
+                    return;
+                }
+
+                boolean renamed;
+                try {
+                    renamed = dir.renameTo(newName);
+                } catch (Exception e) {
+                    renamed = false;
+                }
+                if (!renamed) {
+                    Toast.makeText(this, R.string.rename_app_failed,
+                            Toast.LENGTH_LONG).show();
+                    return;
+                }
+
+                dialog.dismiss();
+                refreshList();
+                Toast.makeText(this, R.string.rename_app_success,
+                        Toast.LENGTH_LONG).show();
+            });
+        });
+        dialog.show();
+        input.requestFocus();
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setSoftInputMode(
+                    WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
+        }
+    }
+
+    private String validateAppName(String name) {
+        if (name.isEmpty()) {
+            return getString(R.string.rename_app_empty);
+        }
+        if (".".equals(name) || "..".equals(name)
+                || name.indexOf('/') >= 0 || name.indexOf('\\') >= 0
+                || name.indexOf('\0') >= 0) {
+            return getString(R.string.rename_invalid_name);
+        }
+        if (name.length() > 100) {
+            return getString(R.string.rename_app_too_long);
+        }
+        for (int i = 0; i < name.length(); i++) {
+            if (Character.isISOControl(name.charAt(i))) {
+                return getString(R.string.rename_invalid_name);
+            }
+        }
+        return null;
+    }
+
+    private void confirmDeleteApp(final int position) {
+        if (position < 0 || position >= apps.size()) {
+            return;
+        }
+        final WebApp app = apps.get(position);
+        final DocumentFile dir = appDirectory(app);
+        if (dir == null) {
+            Toast.makeText(this, R.string.app_folder_missing, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (app.entryPath.indexOf('/') < 0) {
+            Toast.makeText(this, R.string.delete_app_root, Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.delete_app_title)
+                .setMessage(getString(R.string.delete_app_message, app.name))
+                .setNegativeButton(R.string.cancel, null)
+                .setPositiveButton(R.string.delete,
+                        (dialog, which) -> deleteAppAsync(app.name, dir))
+                .show();
+    }
+
+    @SuppressWarnings("deprecation")
+    private void deleteAppAsync(final String name, final DocumentFile dir) {
+        final ProgressDialog progress = ProgressDialog.show(this, null,
+                getString(R.string.deleting), true, false);
+        new Thread(() -> {
+            final boolean deleted = deleteRecursively(dir);
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) {
+                    return;
+                }
+                progress.dismiss();
+                refreshList();
+                Toast.makeText(MainActivity.this,
+                        deleted ? getString(R.string.delete_app_success, name)
+                                : getString(R.string.delete_app_failed),
+                        Toast.LENGTH_LONG).show();
+            });
+        }, "delete-web-app").start();
+    }
+
+    private boolean deleteRecursively(DocumentFile file) {
+        if (file == null) {
+            return false;
+        }
+        if (file.isDirectory()) {
+            for (DocumentFile child : file.listFiles()) {
+                if (!deleteRecursively(child)) {
+                    return false;
+                }
+            }
+        }
+        try {
+            return file.delete();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** 返回该应用的文件夹；父目录本身作为应用时返回 root。 */
+    private DocumentFile appDirectory(WebApp app) {
+        DocumentFile base = root;
+        if (base == null) {
+            return null;
+        }
+        int slash = app.entryPath.indexOf('/');
+        if (slash < 0) {
+            return base;
+        }
+        DocumentFile dir = base.findFile(app.entryPath.substring(0, slash));
+        return dir != null && dir.isDirectory() ? dir : null;
+    }
+
+    /** 优先使用应用目录下的 icon.png，找不到或解码失败时返回 null。 */
+    private Bitmap loadAppIcon(WebApp app) {
+        DocumentFile dir = appDirectory(app);
+        if (dir == null) {
+            return null;
+        }
+        DocumentFile icon = findIconFile(dir);
+        if (icon == null) {
+            return null;
+        }
+        try (InputStream in = getContentResolver().openInputStream(icon.getUri())) {
+            if (in == null) {
+                return null;
+            }
+            byte[] data = readAll(in, 8 * 1024 * 1024);
+            if (data == null) {
+                return null;
+            }
+            return decodeSquareIcon(data);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private DocumentFile findIconFile(DocumentFile dir) {
+        DocumentFile icon = dir.findFile("icon.png");
+        if (icon != null && icon.isFile()) {
+            return icon;
+        }
+        for (DocumentFile child : dir.listFiles()) {
+            String name = child.getName();
+            if (name != null && "icon.png".equalsIgnoreCase(name) && child.isFile()) {
+                return child;
+            }
+        }
+        return null;
+    }
+
+    private byte[] readAll(InputStream in, int maxBytes) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        byte[] buffer = new byte[8192];
+        int read;
+        while ((read = in.read(buffer)) != -1) {
+            if (out.size() + read > maxBytes) {
+                return null;
+            }
+            out.write(buffer, 0, read);
+        }
+        return out.toByteArray();
+    }
+
+    private Bitmap decodeSquareIcon(byte[] data) {
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        BitmapFactory.decodeByteArray(data, 0, data.length, bounds);
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+            return null;
+        }
+
+        int size = shortcutIconSize();
+        int sample = 1;
+        while (bounds.outWidth / (sample * 2) >= size
+                && bounds.outHeight / (sample * 2) >= size) {
+            sample *= 2;
+        }
+
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inSampleSize = sample;
+        options.inPreferredConfig = Bitmap.Config.ARGB_8888;
+        Bitmap decoded = BitmapFactory.decodeByteArray(data, 0, data.length, options);
+        if (decoded == null) {
+            return null;
+        }
+
+        Bitmap square = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(square);
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+        int width = decoded.getWidth();
+        int height = decoded.getHeight();
+        int side = Math.min(width, height);
+        int left = (width - side) / 2;
+        int top = (height - side) / 2;
+        canvas.drawBitmap(decoded,
+                new Rect(left, top, left + side, top + side),
+                new Rect(0, 0, size, size), paint);
+        if (decoded != square) {
+            decoded.recycle();
+        }
+        return square;
+    }
+
+    private int shortcutIconSize() {
+        return Math.max(48, Math.round(
+                108 * getResources().getDisplayMetrics().density));
+    }
+
     /**
-     * 长按应用或链接条目时，为其创建一个桌面快捷方式。
+     * 长按菜单选择“添加到桌面”时创建快捷方式。
+     * 应用目录下存在 icon.png 时优先使用该图片，否则使用自动生成的缩写图标。
      * Android 8.0+ 使用系统固定快捷方式（由桌面弹出确认框）；
      * 旧版系统发送兼容桌面启动器的 INSTALL_SHORTCUT 广播。
      */
     private void addShortcutToDesktop(String type, String name, String target) {
+        addShortcutToDesktop(type, name, target, null);
+    }
+
+    private void addShortcutToDesktop(String type, String name, String target,
+                                      Bitmap customIcon) {
         if (target == null || target.isEmpty()) {
             return;
         }
@@ -678,7 +1042,9 @@ public class MainActivity extends Activity {
                         | Intent.FLAG_ACTIVITY_CLEAR_TOP
                         | Intent.FLAG_ACTIVITY_SINGLE_TOP);
 
-        Bitmap shortcutIcon = createShortcutIcon(type, label, target);
+        Bitmap shortcutIcon = customIcon != null
+                ? customIcon
+                : createShortcutIcon(type, label, target);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             requestPinnedShortcut(label, type, target, launchIntent, shortcutIcon);
         } else {
@@ -736,8 +1102,7 @@ public class MainActivity extends Activity {
      * 这样既不需要联网抓取 favicon，也不会与软件自身图标混淆。
      */
     private Bitmap createShortcutIcon(String type, String label, String target) {
-        int size = Math.max(48, Math.round(
-                108 * getResources().getDisplayMetrics().density));
+        int size = shortcutIconSize();
         Bitmap bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(bitmap);
 

@@ -7,17 +7,17 @@
 1. 点击右上角「导入」，选择一个包含多个 Web 应用子文件夹的目录。应用只记录该目录的访问授权（引用导入），不复制任何文件。
 2. 点击列表中的子文件夹，用手机上的浏览器打开对应的 Web 应用。系统弹窗会提供「仅一次 / 始终」。
 3. 底部切换到「02 链接」，可以添加、编辑、删除常用网址，点击直接用浏览器打开。
-4. 长按应用或链接条目，可以把该条目添加为桌面快捷方式。
+4. 长按应用或链接条目，会打开悬浮菜单：打开、重命名、添加到桌面、删除。
 5. Web 应用可以通过同源 `fetch` 读写自身目录下的 `state.json` 和 `articles/*.json`（v1.12+，导入时需要授予写权限）。
 
 ## 安装
 
-仓库内附带的已签名 APK 是 v1.12（versionCode 13），包含写权限和 JSON 写接口。
+仓库内附带的已签名 APK 是 v1.12（versionCode 13），包含写权限和 JSON 写接口；v1.13 的长按菜单和 icon.png 快捷方式图标在源码中，需要重新构建。
 调试版可通过 `./gradlew assembleDebug` 本地构建。
 
 发布版使用独立签名，与调试版签名不同：
 
-**从 v1.3–v1.11 发布版升级**（同一签名，保留已导入目录和快捷链接）：
+**从 v1.3–v1.12 发布版升级**（同一签名，保留已导入目录和快捷链接）：
 
 ```bash
 adb install -r HTMLOpener-release.apk
@@ -34,11 +34,13 @@ adb install HTMLOpener-release.apk
 
 从 v1.11 升级到 v1.12 后，原有目录授权仍然只有读权限：应用会显示「只读」，保存接口返回 `403`。请点「导入 +」重新选择同一文件夹，并在系统提示中允许修改；`state.json` 和 `articles/` 中的数据不会丢失。
 
+从 v1.12 升级到 v1.13 不需要重新导入目录，原有的读写授权、链接和本地 JSON 数据都会保留。
+
 - 包名：`com.example.htmlopener`
 - 最低系统：Android 6.0（API 23）
 - 目标系统：Android 14（API 34）
-- 源码版本：1.12（versionCode 13）
-- 仓库内 APK：v1.12（versionCode 13），约 122 KB
+- 源码版本：1.13（versionCode 14）
+- 仓库内 APK：v1.12（versionCode 13），约 122 KB；v1.13 需重新构建
 - v1.12 APK SHA-256：`f73a4db69ea17ecb3f66f661594c9cba1d3ef246e74552c9c5c0e2e6ae023dba`
 
 ## 界面
@@ -58,6 +60,7 @@ adb install HTMLOpener-release.apk
 选择的父目录/
 ├── app-one/
 │   ├── index.html      ← 入口，存在时优先打开
+│   ├── icon.png        ← 可选：该应用的桌面快捷方式图标
 │   ├── style.css
 │   └── js/app.js
 ├── app-two/
@@ -74,6 +77,7 @@ adb install HTMLOpener-release.apk
 - 如果所选父目录自身包含 `index.html`，父目录也会显示为一个应用。
 - 如果某个子文件夹内没有 HTML，则不会出现在列表中。
 - 应用可通过写接口维护自己的 `state.json` 和 `articles/*.json`；这些 JSON 数据文件和普通资源一样放在应用目录里，不会被单独列为应用。
+- 应用文件夹根部可以放一个 `icon.png`，作为添加到桌面时的快捷方式图标；文件名大小写不敏感。
 
 ## 快捷链接
 
@@ -83,10 +87,31 @@ adb install HTMLOpener-release.apk
 - 点条目右侧「编辑」可以修改名称/网址，也可以删除。
 - 链接保存在应用本地 `SharedPreferences` 中，不会上传到网络。
 
+## 长按菜单
+
+在「01 应用」或「02 链接」页长按任意条目，会打开悬浮菜单：
+
+- **打开**：直接打开该应用或链接。
+- **重命名**：
+  - 应用：重命名应用文件夹，文件夹内的文件、`state.json`、`articles/` 会一起保留。
+  - 链接：打开编辑对话框，修改名称和网址。
+- **添加到桌面**：为该条目创建桌面快捷方式。
+- **删除**：
+  - 应用：确认后**永久删除该应用文件夹及其中所有文件**（包括 `state.json`、`articles/`），已有桌面快捷方式会失效。
+  - 链接：只删除快捷链接，不影响网页。
+
+说明：
+
+- 父目录本身作为应用显示时（根目录应用），不能重命名或删除，避免误删整个已导入目录。
+- 应用重命名后，之前创建的桌面快捷方式仍指向旧文件夹名，需要重新添加。
+- 删除操作不可恢复，请确认后再执行。
+
 ## 桌面快捷方式
 
-- 在「01 应用」或「02 链接」页长按任意条目，即可请求把该条目添加到桌面。
-- 快捷方式使用自动生成的名称缩写图标，并按目标稳定分配深色背景，不会与软件自身图标混淆，也不需要联网获取 favicon。
+- 长按条目，在悬浮菜单里选择「添加到桌面」。
+- 应用快捷方式优先使用应用文件夹根部的 `icon.png`；找不到或无法解码时，才使用自动生成的名称缩写图标。
+- 链接快捷方式继续使用自动生成的缩写图标，并按目标稳定分配深色背景。
+- 自动图标不会与软件自身图标混淆，也不需要联网获取 favicon。
 - Android 8.0 及以上使用系统固定快捷方式，桌面会弹出确认提示；点击确认后即可从桌面直接打开对应的本地 Web 应用或链接。
 - Android 7.1 及以下使用旧版桌面快捷方式广播，兼容性取决于手机桌面。
 - 本地 Web 应用快捷方式在点击时会重新启动本地文件服务，因此即使应用进程已被回收也能正常打开；如果原目录授权已失效，需要回到应用重新导入目录。
@@ -254,10 +279,10 @@ openssl x509 -in signing/htmlopener-release-cert.pem -noout -fingerprint -sha256
 
 ## 主要文件
 
-- `app/src/main/java/com/example/htmlopener/MainActivity.java`：目录导入与读写授权、只读提示、Web 应用列表、快捷链接、桌面快捷方式、底部导航
+- `app/src/main/java/com/example/htmlopener/MainActivity.java`：目录导入与读写授权、只读提示、Web 应用列表、长按菜单（打开/重命名/删除/添加到桌面）、快捷链接、快捷方式图标、底部导航
 - `app/src/main/java/com/example/htmlopener/HtmlServer.java`：仅监听 `127.0.0.1` 的静态文件服务，以及受限的 JSON `PUT` / `DELETE` 写接口
 - `app/src/main/java/com/example/htmlopener/ServerService.java`：保持服务进程存活的前台服务
 - `app/src/main/res/layout/activity_main.xml`：页面容器和底部导航
 - `app/src/main/res/layout/page_apps.xml`、`page_links.xml`：应用页、链接页
-- `app/src/main/res/layout/item_app.xml`、`item_link.xml`、`dialog_link.xml`：列表行和链接对话框
+- `app/src/main/res/layout/item_app.xml`、`item_link.xml`、`dialog_link.xml`、`dialog_rename.xml`：列表行、链接对话框和应用重命名对话框
 - `app/src/main/res/values/colors.xml`、`styles.xml`：红黑白配色与主题

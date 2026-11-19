@@ -5,6 +5,15 @@ import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.ShortcutInfo;
+import android.content.pm.ShortcutManager;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.RectF;
+import android.graphics.Typeface;
+import android.graphics.drawable.Icon;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -41,6 +50,14 @@ public class MainActivity extends Activity {
     private static final String KEY_TAB = "current_tab";
     private static final int TAB_APPS = 0;
     private static final int TAB_LINKS = 1;
+
+    private static final String ACTION_OPEN_SHORTCUT =
+            "com.example.htmlopener.action.OPEN_SHORTCUT";
+    private static final String EXTRA_SHORTCUT_TYPE = "shortcut_type";
+    private static final String EXTRA_SHORTCUT_NAME = "shortcut_name";
+    private static final String EXTRA_SHORTCUT_TARGET = "shortcut_target";
+    private static final String SHORTCUT_TYPE_APP = "app";
+    private static final String SHORTCUT_TYPE_LINK = "link";
 
     private final List<WebApp> apps = new ArrayList<>();
     private final List<Link> links = new ArrayList<>();
@@ -119,12 +136,28 @@ public class MainActivity extends Activity {
         appsList.setAdapter(appsAdapter);
         appsList.setEmptyView(appEmptyState);
         appsList.setOnItemClickListener((parent, view, position, id) -> openInBrowser(apps.get(position)));
+        appsList.setOnItemLongClickListener((parent, view, position, id) -> {
+            if (position < 0 || position >= apps.size()) {
+                return false;
+            }
+            WebApp app = apps.get(position);
+            addShortcutToDesktop(SHORTCUT_TYPE_APP, app.name, app.entryPath);
+            return true;
+        });
 
         linksAdapter = new LinkAdapter();
         ListView linksList = findViewById(R.id.list_links);
         linksList.setAdapter(linksAdapter);
         linksList.setEmptyView(linkEmptyState);
         linksList.setOnItemClickListener((parent, view, position, id) -> openLink(links.get(position)));
+        linksList.setOnItemLongClickListener((parent, view, position, id) -> {
+            if (position < 0 || position >= links.size()) {
+                return false;
+            }
+            Link link = links.get(position);
+            addShortcutToDesktop(SHORTCUT_TYPE_LINK, link.name, link.url);
+            return true;
+        });
 
         findViewById(R.id.nav_apps).setOnClickListener(v -> showTab(TAB_APPS));
         findViewById(R.id.nav_links).setOnClickListener(v -> showTab(TAB_LINKS));
@@ -136,6 +169,18 @@ public class MainActivity extends Activity {
                 ? TAB_APPS
                 : savedInstanceState.getInt(KEY_TAB, TAB_APPS);
         showTab(currentTab);
+
+        // 从桌面快捷方式冷启动时直接打开对应条目。配置变更重建时不再重复打开。
+        if (savedInstanceState == null) {
+            handleShortcutIntent(getIntent());
+        }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleShortcutIntent(intent);
     }
 
     private void applyTitleStyle() {
@@ -484,6 +529,193 @@ public class MainActivity extends Activity {
                     editDialog.dismiss();
                 })
                 .show();
+    }
+
+    /**
+     * 长按应用或链接条目时，为其创建一个桌面快捷方式。
+     * Android 8.0+ 使用系统固定快捷方式（由桌面弹出确认框）；
+     * 旧版系统发送兼容桌面启动器的 INSTALL_SHORTCUT 广播。
+     */
+    private void addShortcutToDesktop(String type, String name, String target) {
+        if (target == null || target.isEmpty()) {
+            return;
+        }
+        String label = name == null ? "" : name.trim();
+        if (label.isEmpty()) {
+            label = getString(R.string.app_name);
+        }
+
+        Intent launchIntent = new Intent(this, MainActivity.class)
+                .setAction(ACTION_OPEN_SHORTCUT)
+                .putExtra(EXTRA_SHORTCUT_TYPE, type)
+                .putExtra(EXTRA_SHORTCUT_NAME, label)
+                .putExtra(EXTRA_SHORTCUT_TARGET, target)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                        | Intent.FLAG_ACTIVITY_CLEAR_TOP
+                        | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+
+        Bitmap shortcutIcon = createShortcutIcon(type, label, target);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            requestPinnedShortcut(label, type, target, launchIntent, shortcutIcon);
+        } else {
+            installLegacyShortcut(label, launchIntent, shortcutIcon);
+        }
+    }
+
+    private void requestPinnedShortcut(String label, String type, String target,
+                                       Intent launchIntent, Bitmap shortcutIcon) {
+        ShortcutManager manager = getSystemService(ShortcutManager.class);
+        if (manager == null || !manager.isRequestPinShortcutSupported()) {
+            Toast.makeText(this, R.string.shortcut_not_supported, Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        String id = shortcutId(type, target);
+        try {
+            for (ShortcutInfo pinned : manager.getPinnedShortcuts()) {
+                if (id.equals(pinned.getId())) {
+                    Toast.makeText(this, R.string.shortcut_already_exists,
+                            Toast.LENGTH_SHORT).show();
+                    return;
+                }
+            }
+
+            ShortcutInfo shortcut = new ShortcutInfo.Builder(this, id)
+                    .setShortLabel(label)
+                    .setLongLabel(label)
+                    .setIcon(Icon.createWithBitmap(shortcutIcon))
+                    .setIntent(launchIntent)
+                    .build();
+            if (manager.requestPinShortcut(shortcut, null)) {
+                Toast.makeText(this, R.string.shortcut_confirm_hint, Toast.LENGTH_LONG).show();
+            } else {
+                Toast.makeText(this, R.string.shortcut_not_supported, Toast.LENGTH_LONG).show();
+            }
+        } catch (Exception e) {
+            Toast.makeText(this, R.string.shortcut_failed, Toast.LENGTH_LONG).show();
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    private void installLegacyShortcut(String label, Intent launchIntent, Bitmap shortcutIcon) {
+        Intent install = new Intent("com.android.launcher.action.INSTALL_SHORTCUT");
+        install.putExtra(Intent.EXTRA_SHORTCUT_INTENT, launchIntent);
+        install.putExtra(Intent.EXTRA_SHORTCUT_NAME, label);
+        install.putExtra(Intent.EXTRA_SHORTCUT_ICON, shortcutIcon);
+        install.putExtra("duplicate", false);
+        sendBroadcast(install);
+        Toast.makeText(this, R.string.shortcut_legacy_hint, Toast.LENGTH_LONG).show();
+    }
+
+    /**
+     * 为快捷方式生成独立图标：按目标稳定选取深色背景，并显示名称缩写。
+     * 这样既不需要联网抓取 favicon，也不会与软件自身图标混淆。
+     */
+    private Bitmap createShortcutIcon(String type, String label, String target) {
+        int size = Math.max(48, Math.round(
+                108 * getResources().getDisplayMetrics().density));
+        Bitmap bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+
+        Paint background = new Paint(Paint.ANTI_ALIAS_FLAG);
+        background.setColor(shortcutBackgroundColor(type, target));
+        float inset = size * 0.035f;
+        float radius = size * 0.24f;
+        canvas.drawRoundRect(new RectF(inset, inset, size - inset, size - inset),
+                radius, radius, background);
+
+        // 右下角的小斜线作为“外链/快捷入口”的弱提示。
+        Paint accent = new Paint(Paint.ANTI_ALIAS_FLAG);
+        accent.setColor(0x40FFFFFF);
+        accent.setStrokeWidth(size * 0.035f);
+        accent.setStrokeCap(Paint.Cap.ROUND);
+        canvas.drawLine(size * 0.72f, size * 0.78f,
+                size * 0.84f, size * 0.66f, accent);
+
+        String monogram = shortcutMonogram(label, target);
+        int count = monogram.codePointCount(0, monogram.length());
+        Paint text = new Paint(Paint.ANTI_ALIAS_FLAG);
+        text.setColor(Color.WHITE);
+        text.setTextAlign(Paint.Align.CENTER);
+        text.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        text.setTextSize(size * (count > 1 ? 0.31f : 0.44f));
+        Paint.FontMetrics metrics = text.getFontMetrics();
+        float baseline = size / 2f - (metrics.ascent + metrics.descent) / 2f;
+        canvas.drawText(monogram, size / 2f, baseline, text);
+
+        return bitmap;
+    }
+
+    private int shortcutBackgroundColor(String type, String target) {
+        // 低饱和度深色系，保证白色缩写在桌面壁纸上清晰；哈希使同一目标颜色稳定。
+        int[] colors = {
+                0xFFE2231A, // 品牌红
+                0xFF111111, // 黑
+                0xFF18566B, // 深青
+                0xFF3E5B3B, // 深绿
+                0xFF5D3B6E, // 深紫
+                0xFF8A5317  // 深棕
+        };
+        int hash = (type + "\n" + target).hashCode();
+        return colors[Math.floorMod(hash, colors.length)];
+    }
+
+    private String shortcutMonogram(String label, String target) {
+        String source = label == null ? "" : label.trim();
+        if (source.isEmpty()) {
+            String host = target == null ? null : Uri.parse(target).getHost();
+            if (host != null) {
+                source = host.startsWith("www.") ? host.substring(4) : host;
+            }
+            if (source.isEmpty()) {
+                source = getString(R.string.app_name);
+            }
+        }
+
+        String[] words = source.split("\\s+");
+        if (words.length > 1 && !words[0].isEmpty() && !words[1].isEmpty()) {
+            return firstCodePoint(words[0]) + firstCodePoint(words[1]);
+        }
+
+        int count = source.codePointCount(0, source.length());
+        int end = source.offsetByCodePoints(0, Math.min(2, count));
+        return source.substring(0, end).toUpperCase(Locale.ROOT);
+    }
+
+    private String firstCodePoint(String value) {
+        int first = value.codePointAt(0);
+        return new String(Character.toChars(first)).toUpperCase(Locale.ROOT);
+    }
+
+    private String shortcutId(String type, String target) {
+        return "html_opener_" + type + "_"
+                + Integer.toHexString((type + "\n" + target).hashCode());
+    }
+
+    private void handleShortcutIntent(Intent intent) {
+        if (intent == null || !ACTION_OPEN_SHORTCUT.equals(intent.getAction())) {
+            return;
+        }
+
+        String type = intent.getStringExtra(EXTRA_SHORTCUT_TYPE);
+        String name = intent.getStringExtra(EXTRA_SHORTCUT_NAME);
+        String target = intent.getStringExtra(EXTRA_SHORTCUT_TARGET);
+        if (target == null || target.isEmpty()) {
+            return;
+        }
+
+        if (SHORTCUT_TYPE_APP.equals(type)) {
+            if (root == null) {
+                Toast.makeText(this, R.string.shortcut_folder_missing, Toast.LENGTH_LONG).show();
+                return;
+            }
+            if (name == null || name.isEmpty()) {
+                name = getString(R.string.app_name);
+            }
+            openInBrowser(new WebApp(name, target));
+        } else if (SHORTCUT_TYPE_LINK.equals(type)) {
+            openLink(new Link(name == null ? target : name, target));
+        }
     }
 
     private String normalizeUrl(String raw) {

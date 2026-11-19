@@ -3,7 +3,7 @@
     <string name="app_name">HTML 打开器</string>
     <string name="header_title">HTML OPENER</string>
     <string name="header_kicker">LOCAL WEB APPS</string>
-    <string name="header_subtitle">本地 HTML 应用浏览器</string>
+    <string name="header_subtitle">本地 HTML 应用浏览器 · 长按条目添加桌面快捷方式</string>
     <string name="import_action">导入 +</string>
     <string name="folder_none">未导入目录</string>
     <string name="current_folder">当前文件夹</string>
@@ -27,7 +27,7 @@
     <string name="links_title">LINKS.</string>
     <string name="links_kicker">QUICK LINKS</string>
     <string name="links_subtitle">常用链接，一键打开</string>
-    <string name="links_meta">点击打开 · 编辑名称</string>
+    <string name="links_meta">点击打开 · 长按添加桌面快捷方式</string>
     <string name="link_count_zero">00 个链接</string>
     <string name="link_count">%1$s 个链接</string>
     <string name="links_empty_title">还没有快捷链接</string>
@@ -46,6 +46,12 @@
     <string name="delete_link_message">确定删除「%1$s」吗？</string>
     <string name="invalid_url">请输入有效的 http/https 链接</string>
     <string name="edit_action">编辑</string>
+    <string name="shortcut_confirm_hint">请在桌面弹出的提示中确认添加快捷方式</string>
+    <string name="shortcut_not_supported">当前桌面不支持添加固定快捷方式</string>
+    <string name="shortcut_already_exists">桌面上已有该快捷方式</string>
+    <string name="shortcut_failed">添加快捷方式失败</string>
+    <string name="shortcut_legacy_hint">已请求桌面添加快捷方式</string>
+    <string name="shortcut_folder_missing">原文件夹授权已失效，请重新导入目录后再打开此快捷方式</string>
     <string name="server_channel_name">本地文件服务</string>
     <string name="server_channel_description">保持浏览器读取本地 HTML 资源</string>
     <string name="server_notification_title">HTML 文件服务运行中</string>

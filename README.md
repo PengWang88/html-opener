@@ -7,6 +7,7 @@
 1. 点击右上角「导入」，选择一个包含多个 Web 应用子文件夹的目录。应用只记录该目录的访问授权（引用导入），不复制任何文件。
 2. 点击列表中的子文件夹，用手机上的浏览器打开对应的 Web 应用。系统弹窗会提供「仅一次 / 始终」。
 3. 底部切换到「02 链接」，可以添加、编辑、删除常用网址，点击直接用浏览器打开。
+4. 长按应用或链接条目，可以把该条目添加为桌面快捷方式。
 
 ## 安装
 
@@ -33,9 +34,9 @@ adb install HTMLOpener-release.apk
 - 包名：`com.example.htmlopener`
 - 最低系统：Android 6.0（API 23）
 - 目标系统：Android 14（API 34）
-- 版本：1.9（versionCode 10）
-- 发布 APK 大小：约 113 KB
-- 发布 APK SHA-256：`47e34dbd3986c1929eac0267290dff49c23a8e53c2e5bdfc9a785e2b6de368e7`
+- 版本：1.11（versionCode 12）
+- 发布 APK 大小：约 116 KB
+- 发布 APK SHA-256：`a9030875d150add2d2aa7cf69758f439830f9c1c002b8dce965338f637ec54b2`
 
 ## 界面
 
@@ -77,6 +78,15 @@ adb install HTMLOpener-release.apk
 - 点击条目直接用浏览器打开。
 - 点条目右侧「编辑」可以修改名称/网址，也可以删除。
 - 链接保存在应用本地 `SharedPreferences` 中，不会上传到网络。
+
+## 桌面快捷方式
+
+- 在「01 应用」或「02 链接」页长按任意条目，即可请求把该条目添加到桌面。
+- 快捷方式使用自动生成的名称缩写图标，并按目标稳定分配深色背景，不会与软件自身图标混淆，也不需要联网获取 favicon。
+- Android 8.0 及以上使用系统固定快捷方式，桌面会弹出确认提示；点击确认后即可从桌面直接打开对应的本地 Web 应用或链接。
+- Android 7.1 及以下使用旧版桌面快捷方式广播，兼容性取决于手机桌面。
+- 本地 Web 应用快捷方式在点击时会重新启动本地文件服务，因此即使应用进程已被回收也能正常打开；如果原目录授权已失效，需要回到应用重新导入目录。
+- 如果桌面不支持固定快捷方式，应用会提示「当前桌面不支持添加固定快捷方式」。
 
 ## 打开方式
 
@@ -130,7 +140,7 @@ export ANDROID_HOME=/path/to/android-sdk
 
 ## 主要文件
 
-- `app/src/main/java/com/example/htmlopener/MainActivity.java`：目录导入、Web 应用列表、快捷链接、底部导航
+- `app/src/main/java/com/example/htmlopener/MainActivity.java`：目录导入、Web 应用列表、快捷链接、桌面快捷方式、底部导航
 - `app/src/main/java/com/example/htmlopener/HtmlServer.java`：仅监听 `127.0.0.1` 的静态文件服务
 - `app/src/main/java/com/example/htmlopener/ServerService.java`：保持服务进程存活的前台服务
 - `app/src/main/res/layout/activity_main.xml`：页面容器和底部导航
